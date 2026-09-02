@@ -871,13 +871,12 @@ async function handleExtraPhoto(event, key) {
 
     var tanggal = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
-    var r      = await fetchWithTimeout(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'upload_photo', base64Data:dataUrl,
-        fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal })
-    }, isVideo ? 120000 : 60000);
-    var result = JSON.parse(await r.text());
+    var result = await uploadWithProgress(APPS_SCRIPT_URL, {
+      action:'upload_photo', base64Data:dataUrl,
+      fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal
+    }, isVideo ? 120000 : 60000, function(pct){
+      if (status) status.textContent = 'Mengupload... ' + pct + '%';
+    });
     if (result.success) {
       extraPhotos[key] = result.url;
       if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
@@ -1304,6 +1303,8 @@ async function handleFotoSelect(event, code) {
   });
   if (status) status.textContent = 'Mengupload ' + files.length + ' file...';
 
+  var lastErrorMsg = null;
+
   for (var i = 0; i < files.length; i++) {
     var file    = files[i];
     var isVideo = file.type.startsWith('video/');
@@ -1318,9 +1319,10 @@ async function handleFotoSelect(event, code) {
       if (isVideo) { tempEl.muted = true; tempEl.playsInline = true; }
       container.appendChild(tempEl);
     }
-    if (status) status.textContent = 'Mengupload file ' + (i+1) + '/' + files.length + (isVideo ? ' (video, bisa agak lama)...' : '...');
+    var sizeInfo = ' (' + (file.size / 1024 / 1024).toFixed(1) + 'MB)';
+    if (status) status.textContent = 'Menyiapkan file ' + (i+1) + '/' + files.length + sizeInfo + '...';
 
-    // ── Upload ke Drive (dengan timeout supaya gak nge-hang selamanya) ──
+    // ── Upload ke Drive (dengan progress % + timeout, supaya gak nge-hang selamanya) ──
     try {
       var dataUrl, fileName;
       if (isVideo) {
@@ -1333,32 +1335,28 @@ async function handleFotoSelect(event, code) {
       }
 
       // Video lebih besar → kasih timeout lebih panjang (2 menit vs 1 menit untuk foto)
-      var r   = await fetchWithTimeout(APPS_SCRIPT_URL, {
-        method : 'POST',
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body   : JSON.stringify({
-          action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
-          nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
-        })
-      }, isVideo ? 120000 : 60000);
-      var result = JSON.parse(await r.text());
+      var result = await uploadWithProgress(APPS_SCRIPT_URL, {
+        action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
+        nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
+      }, isVideo ? 120000 : 60000, function(pct){
+        if (status) status.textContent = 'Mengupload file ' + (i+1) + '/' + files.length + sizeInfo + ' — ' + pct + '%';
+      });
       if (result.success) {
         auditItems[code].fotoUrls.push(result.url);
         auditItems[code].fotoUrl = auditItems[code].fotoUrls[0];
         if (tempEl) tempEl.remove();
         renderItemThumbs(code); // re-render semua thumb dari data tersimpan + tombol hapus
         saveProgress();
-        if (status) status.textContent = auditItems[code].fotoUrls.length + '/3 tersimpan di Drive';
       } else {
         throw new Error(result.message || 'Upload gagal');
       }
     } catch(e) {
       if (tempEl) tempEl.remove();
       URL.revokeObjectURL(objectUrl);
-      var msg = e.name === 'AbortError'
-        ? 'Timeout — koneksi terlalu lama, coba lagi'
-        : 'Gagal: ' + (e.message||'').substring(0, 50);
-      if (status) status.textContent = msg;
+      lastErrorMsg = e.name === 'AbortError'
+        ? '⚠️ Timeout upload file ' + (i+1) + ' (koneksi terlalu lambat/putus)'
+        : '⚠️ Gagal upload file ' + (i+1) + ': ' + (e.message||'').substring(0, 60);
+      if (status) status.textContent = lastErrorMsg;
       // Lanjut ke file berikutnya (kalau ada) — 1 file gagal tidak boleh nge-block sisanya
     }
   }
@@ -1378,10 +1376,46 @@ async function handleFotoSelect(event, code) {
     l.classList.add('uploaded');
     l.style.borderStyle = 'solid';
   });
-  if (status) status.textContent = total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
+  // PENTING: jangan timpa pesan error terakhir kalau ada file yang gagal —
+  // tampilkan errornya + jumlah yang berhasil, bukan cuma angka generik.
+  if (status) {
+    status.textContent = lastErrorMsg
+      ? lastErrorMsg + ' · ' + total + '/3 tersimpan'
+      : total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
+  }
   event.target.value = ''; // reset input biar bisa pilih file yg sama lagi kalau perlu
 }
 
+
+// Upload dengan progress % real (pakai XHR karena fetch() gak expose upload
+// progress). Ini juga yang kasih tau kalau upload beneran nge-hang vs cuma
+// lambat karena koneksi lemah — user bisa lihat angkanya jalan atau enggak.
+function uploadWithProgress(url, bodyObj, timeoutMs, onProgress) {
+  return new Promise(function(resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
+    xhr.timeout = timeoutMs || 60000;
+    xhr.upload.onprogress = function(e) {
+      if (onProgress && e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+    };
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch (err) { reject(new Error('Respons server tidak valid (bukan JSON)')); }
+      } else {
+        reject(new Error('Server error: HTTP ' + xhr.status));
+      }
+    };
+    xhr.onerror = function() { reject(new Error('Koneksi gagal / network error')); };
+    xhr.ontimeout = function() {
+      var e = new Error('Timeout setelah ' + Math.round((timeoutMs||60000)/1000) + ' detik');
+      e.name = 'AbortError';
+      reject(e);
+    };
+    xhr.send(JSON.stringify(bodyObj));
+  });
+}
 
 // Fetch dengan timeout — mencegah upload nge-hang selamanya kalau koneksi
 // putus di tengah jalan (server sudah selesai proses tapi response gak balik).
