@@ -871,12 +871,13 @@ async function handleExtraPhoto(event, key) {
 
     var tanggal = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
-    var result = await uploadWithProgress(APPS_SCRIPT_URL, {
-      action:'upload_photo', base64Data:dataUrl,
-      fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal
-    }, isVideo ? 120000 : 60000, function(pct){
-      if (status) status.textContent = 'Mengupload... ' + pct + '%';
-    });
+    var r      = await fetchWithTimeout(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'upload_photo', base64Data:dataUrl,
+        fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal })
+    }, isVideo ? 120000 : 60000);
+    var result = JSON.parse(await r.text());
     if (result.success) {
       extraPhotos[key] = result.url;
       if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
@@ -1335,12 +1336,16 @@ async function handleFotoSelect(event, code) {
       }
 
       // Video lebih besar → kasih timeout lebih panjang (2 menit vs 1 menit untuk foto)
-      var result = await uploadWithProgress(APPS_SCRIPT_URL, {
-        action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
-        nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
-      }, isVideo ? 120000 : 60000, function(pct){
-        if (status) status.textContent = 'Mengupload file ' + (i+1) + '/' + files.length + sizeInfo + ' — ' + pct + '%';
-      });
+      var r = await fetchWithTimeout(APPS_SCRIPT_URL, {
+        method : 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
+        body   : JSON.stringify({
+          action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
+          nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
+        })
+      }, isVideo ? 120000 : 60000);
+      if (status) status.textContent = 'Memproses file ' + (i+1) + '/' + files.length + sizeInfo + '...';
+      var result = JSON.parse(await r.text());
       if (result.success) {
         auditItems[code].fotoUrls.push(result.url);
         auditItems[code].fotoUrl = auditItems[code].fotoUrls[0];
