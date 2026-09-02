@@ -352,9 +352,9 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <input type="file" accept="image/*,video/*" capture="environment" class="foto-input" id="foto-cam-bersama" onchange="handleExtraPhoto(event,'bersama')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-bersama" onchange="handleExtraPhoto(event,'bersama')">
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-cam-bersama">📷 Kamera</label>
+        <label class="foto-btn" id="foto-btn-bersama" style="font-size:12px;padding:8px 10px;" for="foto-cam-bersama">📷 Kamera</label>
         <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-bersama">🖼 Galeri</label>
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-bersama">🖼 Galeri</label>
+        <button type="button" class="foto-btn" id="foto-remove-bersama" style="display:none;font-size:12px;padding:8px 10px;color:var(--red-600);border-color:var(--red-600);" onclick="removeExtraFoto('bersama')">🗑 Hapus</button>
         <img class="foto-thumb" id="foto-thumb-bersama">
         <span class="upload-status" id="foto-status-bersama"></span>
       </div>
@@ -366,9 +366,9 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <input type="file" accept="image/*,video/*" capture="environment" class="foto-input" id="foto-cam-commbook" onchange="handleExtraPhoto(event,'commbook')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-commbook" onchange="handleExtraPhoto(event,'commbook')">
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-cam-commbook">📷 Kamera</label>
+        <label class="foto-btn" id="foto-btn-commbook" style="font-size:12px;padding:8px 10px;" for="foto-cam-commbook">📷 Kamera</label>
         <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-commbook">🖼 Galeri</label>
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-commbook">🖼 Galeri</label>
+        <button type="button" class="foto-btn" id="foto-remove-commbook" style="display:none;font-size:12px;padding:8px 10px;color:var(--red-600);border-color:var(--red-600);" onclick="removeExtraFoto('commbook')">🗑 Hapus</button>
         <img class="foto-thumb" id="foto-thumb-commbook">
         <span class="upload-status" id="foto-status-commbook"></span>
       </div>
@@ -725,6 +725,8 @@ function restoreExtraFotoFromUrl(key, url) {
     thumb.onclick = function(u){ return function(){ window.open(u,'_blank'); }; }(url);
   }
   if (status) status.textContent = 'Tersimpan';
+  var removeBtn = document.getElementById('foto-remove-' + key);
+  if (removeBtn) removeBtn.style.display = '';
 }
 
 // ── RESTORE SIGNATURE SCREEN ──────────────────────────────────────
@@ -845,40 +847,66 @@ var extraPhotos = { bersama: '', commbook: '' };
 async function handleExtraPhoto(event, key) {
   var file = event.target.files[0];
   if (!file) return;
-  var btn    = document.getElementById('foto-btn-' + key);
-  var thumb  = document.getElementById('foto-thumb-' + key);
-  var status = document.getElementById('foto-status-' + key);
+  var btn      = document.getElementById('foto-btn-' + key);
+  var thumb    = document.getElementById('foto-thumb-' + key);
+  var status   = document.getElementById('foto-status-' + key);
+  var removeBtn= document.getElementById('foto-remove-' + key);
+  var isVideo  = file.type.startsWith('video/');
 
-  btn.classList.add('uploading');
-  btn.innerHTML = '⏳ Mengupload...';
+  if (btn) { btn.classList.add('uploading'); btn.innerHTML = '⏳ Mengupload...'; }
+  if (status) status.textContent = 'Mengupload...';
 
   try {
-    var compressed = await compressImage(file);
-    thumb.src = compressed;
-    thumb.classList.add('show');
+    var dataUrl, fileName;
+    if (isVideo) {
+      dataUrl  = await fileToBase64(file);
+      var ext  = (file.name.split('.').pop() || 'mp4').toLowerCase();
+      fileName = key + '_' + Date.now() + '.' + ext;
+      if (thumb) { thumb.src = ''; thumb.classList.remove('show'); }
+    } else {
+      dataUrl  = await compressImage(file);
+      fileName = key + '_' + Date.now() + '.jpg';
+      if (thumb) { thumb.src = dataUrl; thumb.classList.add('show'); }
+    }
 
-    var tanggal  = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
-    var fileName = key + '_' + Date.now() + '.jpg';
+    var tanggal = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
-    var r      = await fetch(APPS_SCRIPT_URL, {
+    var r      = await fetchWithTimeout(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'upload_photo', base64Data:compressed,
+      body: JSON.stringify({ action:'upload_photo', base64Data:dataUrl,
         fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal })
-    });
+    }, isVideo ? 120000 : 60000);
     var result = JSON.parse(await r.text());
     if (result.success) {
       extraPhotos[key] = result.url;
-      btn.classList.remove('uploading');
-      btn.classList.add('uploaded');
-      btn.innerHTML = '✅ Foto Tersimpan';
-      status.textContent = 'Tersimpan';
+      if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
+      if (status) status.textContent = 'Tersimpan';
+      if (removeBtn) removeBtn.style.display = '';
     } else { throw new Error(result.message); }
   } catch(e) {
-    btn.classList.remove('uploading');
-    btn.innerHTML = '⚠️ Coba Lagi';
-    status.textContent = 'Gagal upload';
+    if (btn) { btn.classList.remove('uploading'); btn.innerHTML = '⚠️ Coba Lagi'; }
+    if (status) status.textContent = e.name === 'AbortError'
+      ? 'Timeout — koneksi terlalu lama, coba lagi'
+      : 'Gagal upload: ' + (e.message || '').substring(0, 60);
+  } finally {
+    event.target.value = ''; // reset input biar bisa pilih file yg sama lagi
   }
+}
+
+function removeExtraFoto(key) {
+  extraPhotos[key] = '';
+  if (key === 'bersama') auditInfo.fotoBersama = '';
+  if (key === 'commbook') auditInfo.fotoCommBook = '';
+  var btn      = document.getElementById('foto-btn-' + key);
+  var thumb    = document.getElementById('foto-thumb-' + key);
+  var status   = document.getElementById('foto-status-' + key);
+  var removeBtn= document.getElementById('foto-remove-' + key);
+  if (btn) { btn.classList.remove('uploaded'); btn.innerHTML = '📷 Kamera'; }
+  if (thumb) { thumb.src = ''; thumb.classList.remove('show'); }
+  if (status) status.textContent = '';
+  if (removeBtn) removeBtn.style.display = 'none';
+  saveProgress();
 }
 
 async function submitSignatures() {
@@ -1062,9 +1090,15 @@ function restoreItemVisuals() {
       }
     }
 
-    // Restore foto thumbnail — always, regardless of comply status
-    if (resp.fotoUrl) {
-      restoreFotoFromUrl(item.code, resp.fotoUrl);
+    // Restore foto/video thumbnails — always, regardless of comply status
+    if (resp.fotoUrls && resp.fotoUrls.length) {
+      renderItemThumbs(item.code);
+      var status = document.getElementById('foto-status-' + item.code);
+      var total  = resp.fotoUrls.length;
+      if (status) status.textContent = total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
+      var uploadLabels = document.querySelectorAll(
+        'label[for="foto-cam-' + item.code + '"], label[for="foto-input-' + item.code + '"]');
+      uploadLabels.forEach(function(l){ l.classList.add('uploaded'); l.style.borderStyle = 'solid'; });
     }
   });
 }
@@ -1178,6 +1212,60 @@ function setAnswer(code, comply) {
   saveProgress();
 }
 
+// Render ulang semua thumbnail item dari auditItems[code].fotoUrls,
+// masing-masing dikasih tombol hapus (×) biar bisa ganti foto/video.
+function renderItemThumbs(code) {
+  var container = document.getElementById('foto-thumbs-' + code);
+  if (!container) return;
+  var urls = auditItems[code].fotoUrls || [];
+  container.innerHTML = '';
+  urls.forEach(function(url, idx) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;width:52px;height:52px;';
+
+    var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    var previewSrc  = fileIdMatch ? ('https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120') : url;
+
+    var thumbEl = document.createElement('img');
+    thumbEl.src = previewSrc;
+    thumbEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;display:block;';
+    thumbEl.title = 'Klik untuk lihat di Drive';
+    thumbEl.onclick = function(){ window.open(url, '_blank'); };
+    wrap.appendChild(thumbEl);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = '×';
+    delBtn.title = 'Hapus foto/video ini';
+    delBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;'
+      + 'background:var(--red-600);color:#fff;border:2px solid #fff;font-size:13px;line-height:1;'
+      + 'cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;';
+    delBtn.onclick = function(e){ e.preventDefault(); e.stopPropagation(); removeFoto(code, idx); };
+    wrap.appendChild(delBtn);
+
+    container.appendChild(wrap);
+  });
+}
+
+// Hapus 1 foto/video dari suatu item (hanya melepas referensinya, tidak
+// menghapus file di Drive — supaya slot-nya kebuka lagi untuk upload baru)
+function removeFoto(code, idx) {
+  if (!auditItems[code].fotoUrls) return;
+  auditItems[code].fotoUrls.splice(idx, 1);
+  auditItems[code].fotoUrl = auditItems[code].fotoUrls[0] || '';
+  renderItemThumbs(code);
+
+  var total  = auditItems[code].fotoUrls.length;
+  var status = document.getElementById('foto-status-' + code);
+  var uploadLabels = document.querySelectorAll(
+    'label[for="foto-cam-' + code + '"], label[for="foto-input-' + code + '"]');
+  if (total === 0) {
+    uploadLabels.forEach(function(l){ l.classList.remove('uploaded'); l.style.borderStyle = ''; });
+  }
+  if (status) status.textContent = total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
+  saveProgress();
+}
+
 // ── FOTO UPLOAD ───────────────────────────────────────────────
 async function handleFotoSelect(event, code) {
   var files = Array.from(event.target.files);
@@ -1220,27 +1308,19 @@ async function handleFotoSelect(event, code) {
     var file    = files[i];
     var isVideo = file.type.startsWith('video/');
 
-    // ── Local preview menggunakan Object URL (tidak makan memory) ──
+    // ── Local preview sementara menggunakan Object URL (tidak makan memory) ──
     var objectUrl = URL.createObjectURL(file);
+    var tempEl = null;
     if (container) {
-      if (isVideo) {
-        var vidEl = document.createElement('video');
-        vidEl.src = objectUrl;
-        vidEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;';
-        vidEl.muted = true; vidEl.playsInline = true;
-        (function(vEl, url){ vEl.onclick = function(){ window.open(url,'_blank'); }; })(vidEl, objectUrl);
-        container.appendChild(vidEl);
-      } else {
-        var imgEl = document.createElement('img');
-        imgEl.src = objectUrl;
-        imgEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;';
-        imgEl.title = 'Klik untuk lihat';
-        (function(el, url){ el.onclick = function(){ window.open(url,'_blank'); }; })(imgEl, objectUrl);
-        container.appendChild(imgEl);
-      }
+      tempEl = document.createElement(isVideo ? 'video' : 'img');
+      tempEl.src = objectUrl;
+      tempEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px dashed #74C69D;opacity:.6;';
+      if (isVideo) { tempEl.muted = true; tempEl.playsInline = true; }
+      container.appendChild(tempEl);
     }
+    if (status) status.textContent = 'Mengupload file ' + (i+1) + '/' + files.length + (isVideo ? ' (video, bisa agak lama)...' : '...');
 
-    // ── Upload ke Drive ──
+    // ── Upload ke Drive (dengan timeout supaya gak nge-hang selamanya) ──
     try {
       var dataUrl, fileName;
       if (isVideo) {
@@ -1252,36 +1332,34 @@ async function handleFotoSelect(event, code) {
         fileName = code + '_' + Date.now() + '_' + i + '.jpg';
       }
 
-      var r   = await fetch(APPS_SCRIPT_URL, {
+      // Video lebih besar → kasih timeout lebih panjang (2 menit vs 1 menit untuk foto)
+      var r   = await fetchWithTimeout(APPS_SCRIPT_URL, {
         method : 'POST',
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body   : JSON.stringify({
           action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
           nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
         })
-      });
+      }, isVideo ? 120000 : 60000);
       var result = JSON.parse(await r.text());
       if (result.success) {
         auditItems[code].fotoUrls.push(result.url);
         auditItems[code].fotoUrl = auditItems[code].fotoUrls[0];
-        // Update thumbnail onclick ke Drive URL (lebih reliable dari Object URL)
-        if (container) {
-          var thumbs = container.querySelectorAll('img, video, span');
-          var idx2   = auditItems[code].fotoUrls.length - 1;
-          if (thumbs[idx2]) {
-            (function(el, driveUrl){
-              el.onclick = function(){ window.open(driveUrl, '_blank'); };
-              el.title   = 'Klik untuk lihat di Drive';
-            })(thumbs[idx2], result.url);
-          }
-        }
+        if (tempEl) tempEl.remove();
+        renderItemThumbs(code); // re-render semua thumb dari data tersimpan + tombol hapus
         saveProgress();
         if (status) status.textContent = auditItems[code].fotoUrls.length + '/3 tersimpan di Drive';
       } else {
         throw new Error(result.message || 'Upload gagal');
       }
     } catch(e) {
-      if (status) status.textContent = 'Gagal: ' + (e.message||'').substring(0, 50);
+      if (tempEl) tempEl.remove();
+      URL.revokeObjectURL(objectUrl);
+      var msg = e.name === 'AbortError'
+        ? 'Timeout — koneksi terlalu lama, coba lagi'
+        : 'Gagal: ' + (e.message||'').substring(0, 50);
+      if (status) status.textContent = msg;
+      // Lanjut ke file berikutnya (kalau ada) — 1 file gagal tidak boleh nge-block sisanya
     }
   }
 
@@ -1301,8 +1379,18 @@ async function handleFotoSelect(event, code) {
     l.style.borderStyle = 'solid';
   });
   if (status) status.textContent = total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
+  event.target.value = ''; // reset input biar bisa pilih file yg sama lagi kalau perlu
 }
 
+
+// Fetch dengan timeout — mencegah upload nge-hang selamanya kalau koneksi
+// putus di tengah jalan (server sudah selesai proses tapi response gak balik).
+function fetchWithTimeout(url, options, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 60000);
+  return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+    .finally(function(){ clearTimeout(timer); });
+}
 
 function fileToBase64(file) {
   return new Promise(function(resolve, reject) {
