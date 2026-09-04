@@ -1242,6 +1242,14 @@ function renderItemThumbs(code) {
     var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     var previewSrc  = fileIdMatch ? ('https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120') : url;
 
+    var thumbEl = document.createElement('img');
+    thumbEl.src = previewSrc;
+    thumbEl.alt = '';
+    thumbEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;display:block;';
+    thumbEl.title = 'Klik untuk lihat di Drive';
+    thumbEl.onclick = function(){ window.open(url, '_blank'); };
+    wrap.appendChild(thumbEl);
+
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.textContent = '×';
@@ -1252,44 +1260,8 @@ function renderItemThumbs(code) {
     delBtn.onclick = function(e){ e.preventDefault(); e.stopPropagation(); removeFoto(code, idx); };
     wrap.appendChild(delBtn);
 
-    loadThumbWithRetry(wrap, previewSrc, url, 0);
     container.appendChild(wrap);
   });
-}
-
-// Coba load thumbnail asli dari Drive. Video yang baru diupload butuh waktu
-// diproses dulu sama Google sebelum thumbnail-nya siap — jadi kalau gagal,
-// tampilkan ⏳ sebentar terus otomatis coba lagi tiap 5 detik (maks ~30 detik).
-// Begitu siap, otomatis keganti ke thumbnail asli tanpa perlu refresh manual.
-function loadThumbWithRetry(wrap, previewSrc, openUrl, attempt) {
-  var maxAttempts = 6; // 6 x 5 detik = 30 detik total
-  var old = wrap.querySelector('img, .thumb-pending');
-  if (old) old.remove();
-
-  var thumbEl = document.createElement('img');
-  thumbEl.src = previewSrc + (attempt > 0 ? ('&r=' + Date.now()) : ''); // cache-bust pas retry
-  thumbEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;display:block;';
-  thumbEl.title = 'Klik untuk lihat di Drive';
-  thumbEl.onclick = function(){ window.open(openUrl, '_blank'); };
-  thumbEl.onerror = function() {
-    if (attempt < maxAttempts) {
-      var pending = document.createElement('div');
-      pending.className = 'thumb-pending';
-      pending.style.cssText = 'width:52px;height:52px;border-radius:6px;border:2px dashed #74C69D;cursor:pointer;'
-        + 'display:flex;align-items:center;justify-content:center;background:#F0FFF4;font-size:18px;';
-      pending.textContent = '⏳';
-      pending.title = 'Video sedang diproses Google Drive — thumbnail akan muncul otomatis';
-      pending.onclick = function(){ window.open(openUrl, '_blank'); };
-      wrap.insertBefore(pending, wrap.firstChild);
-      setTimeout(function(){ loadThumbWithRetry(wrap, previewSrc, openUrl, attempt + 1); }, 5000);
-    } else {
-      // Nyerah setelah 30 detik — biarkan gambar apa adanya (browser default),
-      // tetap bisa diklik buat buka file aslinya di Drive
-      thumbEl.onerror = null;
-      wrap.insertBefore(thumbEl, wrap.firstChild);
-    }
-  };
-  wrap.insertBefore(thumbEl, wrap.firstChild);
 }
 
 // Hapus 1 foto/video dari suatu item (hanya melepas referensinya, tidak
@@ -1525,23 +1497,30 @@ function goToSection(idx) {
 }
 
 function nextSection(currentIdx) {
-  // Cek mandatory: catatan wajib diisi jika pilih "Tidak"
+  // Cek mandatory: catatan DAN minimal 1 bukti foto/video wajib diisi jika pilih "Tidak"
   var secKey   = SECTION_KEYS[currentIdx];
   var secItems = ITEMS.filter(function(i){ return i.section === secKey; });
-  var missing  = [];
+  var missingCatatan = [];
+  var missingBukti    = [];
   secItems.forEach(function(item) {
     var resp = auditItems[item.code];
-    if (resp && resp.comply === false && !resp.catatan.trim()) {
-      missing.push(item.code);
+    if (resp && resp.comply === false) {
+      if (!resp.catatan.trim()) missingCatatan.push(item.code);
+      if (!resp.fotoUrls || resp.fotoUrls.length === 0) missingBukti.push(item.code);
     }
   });
-  if (missing.length > 0) {
+  if (missingCatatan.length > 0 || missingBukti.length > 0) {
     // Highlight dan scroll ke item pertama yang kosong
-    var firstEl = document.getElementById('cat-' + missing[0]);
+    var firstCode = missingCatatan[0] || missingBukti[0];
+    var firstEl = document.getElementById('cat-' + firstCode);
     if (firstEl) { firstEl.style.borderColor = 'var(--red-600)'; firstEl.focus(); }
-    showError('Catatan wajib diisi untuk item yang TIDAK comply: ' + missing.join(', '));
+    var msgParts = [];
+    if (missingCatatan.length > 0) msgParts.push('Catatan wajib diisi: ' + missingCatatan.join(', '));
+    if (missingBukti.length > 0) msgParts.push('Bukti foto/video wajib diupload (min. 1): ' + missingBukti.join(', '));
+    showError(msgParts.join(' · '));
+    var highlightCodes = missingCatatan.concat(missingBukti);
     setTimeout(function() {
-      missing.forEach(function(code) {
+      highlightCodes.forEach(function(code) {
         var el = document.getElementById('cat-' + code);
         if (el) el.style.borderColor = '';
       });
