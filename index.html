@@ -915,6 +915,9 @@ async function submitSignatures() {
   var picJabatan = document.getElementById('f-pic-jabatan').value.trim();
   if (!picNama)    { showError('Nama PIC Outlet wajib diisi!');    document.getElementById('f-pic-nama').focus();    return; }
   if (!picJabatan) { showError('Jabatan PIC Outlet wajib diisi!'); document.getElementById('f-pic-jabatan').focus(); return; }
+  // Validasi tanda tangan wajib diisi (baik baru digambar maupun hasil restore)
+  if (!sigState['auditor']) { showError('Tanda tangan Auditor wajib diisi!'); return; }
+  if (!sigState['pic'])     { showError('Tanda tangan PIC Outlet wajib diisi!'); return; }
   // Validasi foto dokumentasi wajib diisi
   if (!extraPhotos.bersama)  { showError('Foto Bersama Auditor & Auditee wajib diupload!');  return; }
   if (!extraPhotos.commbook) { showError('Foto Communication Book wajib diupload!'); return; }
@@ -939,7 +942,7 @@ async function submitSignatures() {
     var dataUrl = getSigDataURL(id);
     if (!dataUrl) return existingUrl || ''; // fallback ke URL lama
     try {
-      var r = await fetch(APPS_SCRIPT_URL, {
+      var r = await fetchWithTimeout(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: JSON.stringify({
@@ -949,12 +952,12 @@ async function submitSignatures() {
           nomorOutlet: auditInfo.nomorOutlet || 'sig',
           tanggal: tanggal
         })
-      });
+      }, 60000); // 60 detik timeout — jangan sampai hang selamanya
       var txt    = await r.text();
       var result = JSON.parse(txt);
       return result.success ? result.url : dataUrl; // fallback ke base64 kalau gagal
     } catch(e) {
-      return dataUrl; // fallback
+      return dataUrl; // fallback — tetap punya base64-nya walau upload ke Drive gagal
     }
   }
 
@@ -962,13 +965,17 @@ async function submitSignatures() {
   var btn = document.querySelector('#screen-signature .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Mengupload TTD...'; }
 
-  auditInfo.signAuditor = await uploadSig('auditor');
-  auditInfo.signPIC     = await uploadSig('pic');
-
-  if (btn) { btn.disabled = false; btn.textContent = 'Lanjut Review →'; }
-
-  saveProgress();
-  showReview();
+  try {
+    auditInfo.signAuditor = await uploadSig('auditor');
+    auditInfo.signPIC     = await uploadSig('pic');
+    saveProgress();
+    showReview();
+  } catch(e) {
+    // Apapun yang gagal tak terduga, jangan biarkan tombol nyangkut selamanya
+    showError('Gagal memproses tanda tangan: ' + e.message + ' — coba lagi.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Lanjut Review →'; }
+  }
 }
 
 // ── SCREEN HELPERS ───────────────────────────────────────────
