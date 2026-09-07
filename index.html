@@ -1044,6 +1044,7 @@ function restoreProgress() {
     if (resp && resp.fotoUrl) restoreFotoFromUrl(item.code, resp.fotoUrl);
   });
   fillInfoFields(); // pastikan info fields terisi jika user back ke screen-info
+  restoreSignatureScreen(); // restore TTD, nama/jabatan PIC, foto bersama/commbook
   goToSection(currentSectionIdx);
 }
 
