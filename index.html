@@ -1681,6 +1681,34 @@ function resetForm() {
   extraPhotos = { bersama:'', commbook:'' };
   ITEMS.forEach(i => { auditItems[i.code] = { comply:true, catatan:'', fotoUrl:'' }; });
   document.getElementById('screen-sections').innerHTML = '';
+
+  // Kosongkan juga field-field di halaman "Informasi Audit" — sebelumnya
+  // cuma state JS-nya yang direset, elemen <input>-nya masih nyimpen value lama.
+  ['f-outlet','f-nama-outlet','f-alamat','f-auditor','f-tanggal','f-posisi','f-status','f-kategori','f-email']
+    .forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+
+  // Kosongkan juga halaman Tanda Tangan: nama/jabatan PIC, canvas ttd,
+  // dan foto dokumentasi (Bersama / Communication Book) — sama-sama
+  // ketinggalan dari submission sebelumnya kalau gak direset manual.
+  ['f-pic-nama','f-pic-jabatan'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  try { clearSig('auditor'); clearSig('pic'); } catch(e) {}
+  ['bersama','commbook'].forEach(function(key){
+    var btn = document.getElementById('foto-btn-' + key);
+    var thumb = document.getElementById('foto-thumb-' + key);
+    var status = document.getElementById('foto-status-' + key);
+    var removeBtn = document.getElementById('foto-remove-' + key);
+    if (btn) { btn.classList.remove('uploaded'); btn.innerHTML = '📷 Kamera'; }
+    if (thumb) { thumb.src = ''; thumb.classList.remove('show'); }
+    if (status) status.textContent = '';
+    if (removeBtn) removeBtn.style.display = 'none';
+  });
+
   showScreen('screen-splash');
 }
 
