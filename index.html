@@ -866,6 +866,10 @@ function initSigPad(id)   {}
 
 function showSignatureScreen() {
   showScreen('screen-signature');
+  // Tandai posisi "sudah sampai TTD" biar kalau di-refresh & resume,
+  // langsung loncat ke sini lagi (bukan balik ke section checklist terakhir)
+  currentSectionIdx = SECTION_KEYS.length;
+  saveProgress();
   // Restore data tersimpan setelah render selesai
   // Gunakan double rAF untuk pastikan DOM sudah visible
   requestAnimationFrame(function() {
@@ -1090,8 +1094,12 @@ function restoreProgress() {
     if (resp && resp.fotoUrl) restoreFotoFromUrl(item.code, resp.fotoUrl);
   });
   fillInfoFields(); // pastikan info fields terisi jika user back ke screen-info
-  restoreSignatureScreen(); // restore TTD, nama/jabatan PIC, foto bersama/commbook
-  goToSection(currentSectionIdx);
+  if (currentSectionIdx >= SECTION_KEYS.length) {
+    showSignatureScreen(); // langsung ke TTD (pakai double-rAF restore-nya sendiri)
+  } else {
+    restoreSignatureScreen(); // tetap restore data di background walau belum ke section-nya
+    goToSection(currentSectionIdx);
+  }
 }
 
 function discardProgress() {
