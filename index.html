@@ -673,10 +673,24 @@ function _attachSigPad(id) {
 
 }
 
+var _sigSaveTimer = {};
 function _markSig(id) {
   sigState[id] = true;
   var el = document.getElementById('sig-' + id + '-status');
   if (el) el.textContent = '✅ Tanda tangan terekam';
+  // Auto-save coretan ke localStorage (debounced) — biar gak ilang kalau
+  // di-refresh sebelum sempat klik "Lanjut Review" (yang baru upload ke Drive).
+  clearTimeout(_sigSaveTimer[id]);
+  _sigSaveTimer[id] = setTimeout(function() {
+    try {
+      var canvas = document.getElementById('canvas-' + id);
+      if (!canvas) return;
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+      if (id === 'auditor') auditInfo.draftSignAuditor = dataUrl;
+      else auditInfo.draftSignPIC = dataUrl;
+      saveProgress();
+    } catch(e) {}
+  }, 600);
 }
 
 // ── RESTORE FOTO DARI URL (untuk revisi / reload) ────────────────
@@ -731,37 +745,54 @@ function restoreExtraFotoFromUrl(key, url) {
 
 // ── RESTORE SIGNATURE SCREEN ──────────────────────────────────────
 function restoreSignatureScreen() {
-  // 1. Restore TTD — tampilkan preview via <img> bukan draw ke canvas
-  //    (avoid cross-origin canvas SecurityError)
+  // 1. Restore TTD — baik yang udah diupload ke Drive (submission sebelumnya)
+  //    maupun draft coretan yang belum sempat diupload (misal ke-refresh
+  //    sebelum klik "Lanjut Review").
   ['auditor','pic'].forEach(function(id) {
-    var url = id === 'auditor' ? (auditInfo.signAuditor||'') : (auditInfo.signPIC||'');
+    var url      = id === 'auditor' ? (auditInfo.signAuditor||'')      : (auditInfo.signPIC||'');
+    var draft    = id === 'auditor' ? (auditInfo.draftSignAuditor||'') : (auditInfo.draftSignPIC||'');
     var statusEl = document.getElementById('sig-' + id + '-status');
     var canvas   = document.getElementById('canvas-' + id);
-    if (!url || url.length < 10) return;
 
-    // Mark as signed (restored) — ctx tidak di-set supaya uploadSig tahu ini TTD lama
-    sigState[id] = true;
-    delete _sigCtx[id]; // hapus ctx reference sebagai sinyal "TTD dari restore, bukan baru"
+    if (url && url.length > 10) {
+      // Sudah pernah diupload ke Drive — reuse URL-nya, jangan upload ulang
+      sigState[id] = true;
+      delete _sigCtx[id]; // sinyal "TTD lama" ke submitSignatures/uploadSig
 
-    // Show status
-    if (statusEl) statusEl.innerHTML =
-      '✅ TTD tersimpan &nbsp;|&nbsp; <a href="' + url + '" target="_blank" style="color:#1B4332;font-size:11px;">Lihat TTD sebelumnya</a>'
-      + ' &nbsp;|&nbsp; <span style="font-size:11px;color:#666;">Klik Ulangi jika mau TTD ulang</span>';
+      if (statusEl) statusEl.innerHTML =
+        '✅ TTD tersimpan &nbsp;|&nbsp; <a href="' + url + '" target="_blank" style="color:#1B4332;font-size:11px;">Lihat TTD sebelumnya</a>'
+        + ' &nbsp;|&nbsp; <span style="font-size:11px;color:#666;">Klik Ulangi jika mau TTD ulang</span>';
 
-    // Draw preview di canvas (tanpa crossOrigin untuk hindari taint)
-    if (canvas) {
-      var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      if (m) {
-        var previewUrl = 'https://lh3.googleusercontent.com/d/' + m[1] + '=w300';
-        var img = new Image();
-        img.onload = function() {
-          var ctx2 = canvas.getContext('2d');
-          ctx2.fillStyle = '#FFFFFF';
-          ctx2.fillRect(0, 0, canvas.width, canvas.height);
-          var s = Math.min(canvas.width/this.width, canvas.height/this.height);
-          ctx2.drawImage(this, (canvas.width-this.width*s)/2, (canvas.height-this.height*s)/2, this.width*s, this.height*s);
+      if (canvas) {
+        var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (m) {
+          var previewUrl = 'https://lh3.googleusercontent.com/d/' + m[1] + '=w300';
+          var img = new Image();
+          img.onload = function() {
+            var ctx2 = canvas.getContext('2d');
+            ctx2.fillStyle = '#FFFFFF';
+            ctx2.fillRect(0, 0, canvas.width, canvas.height);
+            var s = Math.min(canvas.width/this.width, canvas.height/this.height);
+            ctx2.drawImage(this, (canvas.width-this.width*s)/2, (canvas.height-this.height*s)/2, this.width*s, this.height*s);
+          };
+          img.src = previewUrl;
+        }
+      }
+    } else if (draft && draft.length > 10) {
+      // Draft coretan yang belum sempat diupload — gambar ulang dari base64
+      // sendiri (same-origin, gak bikin canvas ke-taint) dan biarkan _sigCtx[id]
+      // tetap ada supaya submitSignatures tau ini TTD "baru" yang perlu diupload.
+      sigState[id] = true;
+      if (statusEl) statusEl.textContent = '✅ Tanda tangan terekam (draft dipulihkan)';
+      if (canvas) {
+        var ctx3 = canvas.getContext('2d');
+        var img2 = new Image();
+        img2.onload = function() {
+          ctx3.fillStyle = '#FFFFFF';
+          ctx3.fillRect(0, 0, canvas.width, canvas.height);
+          ctx3.drawImage(img2, 0, 0, canvas.width, canvas.height);
         };
-        img.src = previewUrl;
+        img2.src = draft;
       }
     }
   });
@@ -806,6 +837,9 @@ function clearSig(id) {
   _sigCtx[id]  = ctx;
   _sigDown[id] = false;
   sigState[id] = false;
+  if (id === 'auditor') { auditInfo.draftSignAuditor = ''; auditInfo.signAuditor = ''; }
+  else                  { auditInfo.draftSignPIC     = ''; auditInfo.signPIC     = ''; }
+  saveProgress();
   var el = document.getElementById('sig-' + id + '-status');
   if (el) el.textContent = '';
 }
@@ -880,6 +914,9 @@ async function handleExtraPhoto(event, key) {
     var result = JSON.parse(await r.text());
     if (result.success) {
       extraPhotos[key] = result.url;
+      auditInfo.fotoBersama  = extraPhotos.bersama;
+      auditInfo.fotoCommBook = extraPhotos.commbook;
+      saveProgress(); // simpan sekarang juga — jangan sampai ilang kalau di-refresh sebelum submit
       if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
       if (status) status.textContent = 'Tersimpan';
       if (removeBtn) removeBtn.style.display = '';
@@ -968,6 +1005,8 @@ async function submitSignatures() {
   try {
     auditInfo.signAuditor = await uploadSig('auditor');
     auditInfo.signPIC     = await uploadSig('pic');
+    auditInfo.draftSignAuditor = ''; // sudah keupload permanen, draft base64 gak perlu lagi
+    auditInfo.draftSignPIC     = '';
     saveProgress();
     showReview();
   } catch(e) {
