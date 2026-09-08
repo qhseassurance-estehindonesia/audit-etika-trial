@@ -1131,9 +1131,12 @@ function submitInfo() {
   if (!status)      { showError('Status Kebun wajib dipilih!');   document.getElementById('f-status').focus();      return; }
   if (!email || !email.includes('@')) { alert('Format email tidak valid!'); return; }
 
-  auditInfo = { nomorOutlet:outlet, namaOutlet:namaOutlet, alamatKebun:alamat,
+  // PENTING: merge ke auditInfo yang ada, JANGAN reassign objek baru —
+  // kalau di-reassign, semua data yang udah di-restore sebelumnya
+  // (TTD, nama/jabatan PIC, foto bersama/commbook) bakal ketimpa hilang.
+  Object.assign(auditInfo, { nomorOutlet:outlet, namaOutlet:namaOutlet, alamatKebun:alamat,
                 namaAuditor:auditor, tanggalAudit:tanggal,
-                posisiAuditor:posisi, kategoriAudit:kategori, statusKebun:status, emailPIC:email };
+                posisiAuditor:posisi, kategoriAudit:kategori, statusKebun:status, emailPIC:email });
   saveProgress();
 
   buildSectionScreens();
