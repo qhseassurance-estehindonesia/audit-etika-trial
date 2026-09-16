@@ -599,12 +599,6 @@ const SECTION_LABELS = {
 };
 
 // ── GROUPING INFO ────────────────────────────────────────────
-// Nama grup sesuai Excel "Indikator Penilaian ETIKA": Interior Appearance
-// terbagi jadi 4 grouping (Dining, Toilet, Area Kerja, Equipment), dan
-// Exterior Appearance jadi 1 grouping tunggal. Dipakai untuk menampilkan
-// penanda visual di form, supaya auditor paham item mana saja yang
-// dinilai sebagai satu kesatuan grouping (poin hanya berkurang kalau
-// SEMUA item dalam grup itu dijawab "Tidak").
 const GROUP_INFO = {
   EA : { label: "Exterior Appearance" },
   IA1: { label: "Dining Area" },
@@ -653,11 +647,10 @@ function timeSince(isoStr) {
 
 
 // ── SIGNATURE PAD ────────────────────────────────────────────
-// Simpan ctx & state di module level biar clearSig bisa akses
 var sigState   = { auditor: false, pic: false };
-var _sigCtx    = {};   // { auditor: ctx, pic: ctx }
-var _sigDown   = {};   // { auditor: false, pic: false }
-var _sigLast   = {};   // { auditor: {x,y}, pic: {x,y} }
+var _sigCtx    = {};
+var _sigDown   = {};
+var _sigLast   = {};
 
 function _attachSigPad(id) {
   var canvas = document.getElementById('canvas-' + id);
@@ -668,7 +661,6 @@ function _attachSigPad(id) {
   _sigDown[id] = false;
   _sigLast[id] = { x:0, y:0 };
 
-  // Fill putih — CSS background tidak ikut ke toDataURL (JPEG → hitam)
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -727,8 +719,6 @@ function _markSig(id) {
   sigState[id] = true;
   var el = document.getElementById('sig-' + id + '-status');
   if (el) el.textContent = '✅ Tanda tangan terekam';
-  // Auto-save coretan ke localStorage (debounced) — biar gak ilang kalau
-  // di-refresh sebelum sempat klik "Lanjut Review" (yang baru upload ke Drive).
   clearTimeout(_sigSaveTimer[id]);
   _sigSaveTimer[id] = setTimeout(function() {
     try {
@@ -753,12 +743,11 @@ function restoreFotoFromUrl(code, url) {
     btn.innerHTML = '✅ Foto Tersimpan';
   }
   if (thumb) {
-    // Coba load thumbnail dari Drive preview URL
     var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (fileIdMatch) {
       thumb.src = 'https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120';
     } else {
-      thumb.src = url; // fallback jika bukan Drive URL
+      thumb.src = url;
     }
     thumb.classList.add('show');
     thumb.style.cursor = 'pointer';
@@ -794,9 +783,6 @@ function restoreExtraFotoFromUrl(key, url) {
 
 // ── RESTORE SIGNATURE SCREEN ──────────────────────────────────────
 function restoreSignatureScreen() {
-  // 1. Restore TTD — baik yang udah diupload ke Drive (submission sebelumnya)
-  //    maupun draft coretan yang belum sempat diupload (misal ke-refresh
-  //    sebelum klik "Lanjut Review").
   ['auditor','pic'].forEach(function(id) {
     var url      = id === 'auditor' ? (auditInfo.signAuditor||'')      : (auditInfo.signPIC||'');
     var draft    = id === 'auditor' ? (auditInfo.draftSignAuditor||'') : (auditInfo.draftSignPIC||'');
@@ -804,9 +790,8 @@ function restoreSignatureScreen() {
     var canvas   = document.getElementById('canvas-' + id);
 
     if (url && url.length > 10) {
-      // Sudah pernah diupload ke Drive — reuse URL-nya, jangan upload ulang
       sigState[id] = true;
-      delete _sigCtx[id]; // sinyal "TTD lama" ke submitSignatures/uploadSig
+      delete _sigCtx[id];
 
       if (statusEl) statusEl.innerHTML =
         '✅ TTD tersimpan &nbsp;|&nbsp; <a href="' + url + '" target="_blank" style="color:#1B4332;font-size:11px;">Lihat TTD sebelumnya</a>'
@@ -828,9 +813,6 @@ function restoreSignatureScreen() {
         }
       }
     } else if (draft && draft.length > 10) {
-      // Draft coretan yang belum sempat diupload — gambar ulang dari base64
-      // sendiri (same-origin, gak bikin canvas ke-taint) dan biarkan _sigCtx[id]
-      // tetap ada supaya submitSignatures tau ini TTD "baru" yang perlu diupload.
       sigState[id] = true;
       if (statusEl) statusEl.textContent = '✅ Tanda tangan terekam (draft dipulihkan)';
       if (canvas) {
@@ -846,13 +828,11 @@ function restoreSignatureScreen() {
     }
   });
 
-  // 2. Restore foto dokumentasi
   var fb = auditInfo.fotoBersama  || extraPhotos.bersama  || '';
   var cb = auditInfo.fotoCommBook || extraPhotos.commbook || '';
   if (fb) { extraPhotos.bersama  = fb; restoreExtraFotoFromUrl('bersama',  fb); }
   if (cb) { extraPhotos.commbook = cb; restoreExtraFotoFromUrl('commbook', cb); }
 
-  // 3. Restore nama & jabatan PIC (retry-safe)
   function fillPIC() {
     var picNamaEl = document.getElementById('f-pic-nama');
     var picJabEl  = document.getElementById('f-pic-jabatan');
@@ -860,25 +840,20 @@ function restoreSignatureScreen() {
     if (picJabEl  && auditInfo.jabatanPIC) picJabEl.value  = auditInfo.jabatanPIC;
   }
   fillPIC();
-  setTimeout(fillPIC, 200); // retry sekali lagi jika DOM belum siap
+  setTimeout(fillPIC, 200);
 }
 
-// Init saat page load — canvas punya width/height dari HTML attribute
 _attachSigPad('auditor');
 _attachSigPad('pic');
 
 function clearSig(id) {
   var canvas = document.getElementById('canvas-' + id);
   if (!canvas) return;
-  // Reset canvas dengan 3 cara sekaligus untuk kompatibilitas maksimal:
   var w = canvas.width, h = canvas.height;
-  // 1. Reset via width assignment (clears buffer + context state)
   canvas.width = w;
-  // 2. Re-fill background (force visual repaint)
   var ctx = canvas.getContext('2d');
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, w, h);
-  // 3. Reset drawing style
   ctx.strokeStyle = '#1B4332';
   ctx.lineWidth   = 3;
   ctx.lineCap     = 'round';
@@ -893,7 +868,6 @@ function clearSig(id) {
   if (el) el.textContent = '';
 }
 
-// Event delegation untuk tombol Ulangi — paling reliable, tidak bergantung pada timing DOM
 document.addEventListener('click', function(e) {
   var t = e.target;
   if (!t) return;
@@ -915,12 +889,8 @@ function initSigPad(id)   {}
 
 function showSignatureScreen() {
   showScreen('screen-signature');
-  // Tandai posisi "sudah sampai TTD" biar kalau di-refresh & resume,
-  // langsung loncat ke sini lagi (bukan balik ke section checklist terakhir)
   currentSectionIdx = SECTION_KEYS.length;
   saveProgress();
-  // Restore data tersimpan setelah render selesai
-  // Gunakan double rAF untuk pastikan DOM sudah visible
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {
       restoreSignatureScreen();
@@ -958,18 +928,16 @@ async function handleExtraPhoto(event, key) {
 
     var tanggal = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
-    var r      = await fetchWithTimeout(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'upload_photo', base64Data:dataUrl,
-        fileName:fileName, nomorOutlet:auditInfo.nomorOutlet||'doc', tanggal:tanggal })
+    var result = await postJSON(APPS_SCRIPT_URL, {
+      action: 'upload_photo', base64Data: dataUrl,
+      fileName: fileName, nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
     }, isVideo ? 180000 : 60000);
-    var result = JSON.parse(await r.text());
+
     if (result.success) {
       extraPhotos[key] = result.url;
       auditInfo.fotoBersama  = extraPhotos.bersama;
       auditInfo.fotoCommBook = extraPhotos.commbook;
-      saveProgress(); // simpan sekarang juga — jangan sampai ilang kalau di-refresh sebelum submit
+      saveProgress();
       if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
       if (status) status.textContent = 'Tersimpan';
       if (removeBtn) removeBtn.style.display = '';
@@ -978,9 +946,9 @@ async function handleExtraPhoto(event, key) {
     if (btn) { btn.classList.remove('uploading'); btn.innerHTML = '⚠️ Coba Lagi'; }
     if (status) status.textContent = e.name === 'AbortError'
       ? 'Timeout — koneksi terlalu lama, coba lagi'
-      : 'Gagal upload: ' + (e.message || '').substring(0, 60);
+      : 'Gagal upload: ' + (e.message || '').substring(0, 80);
   } finally {
-    event.target.value = ''; // reset input biar bisa pilih file yg sama lagi
+    event.target.value = '';
   }
 }
 
@@ -1000,15 +968,12 @@ function removeExtraFoto(key) {
 }
 
 async function submitSignatures() {
-  // Validasi nama & jabatan PIC wajib diisi
   var picNama    = document.getElementById('f-pic-nama').value.trim();
   var picJabatan = document.getElementById('f-pic-jabatan').value.trim();
   if (!picNama)    { showError('Nama PIC Outlet wajib diisi!');    document.getElementById('f-pic-nama').focus();    return; }
   if (!picJabatan) { showError('Jabatan PIC Outlet wajib diisi!'); document.getElementById('f-pic-jabatan').focus(); return; }
-  // Validasi tanda tangan wajib diisi (baik baru digambar maupun hasil restore)
   if (!sigState['auditor']) { showError('Tanda tangan Auditor wajib diisi!'); return; }
   if (!sigState['pic'])     { showError('Tanda tangan PIC Outlet wajib diisi!'); return; }
-  // Validasi foto dokumentasi wajib diisi
   if (!extraPhotos.bersama)  { showError('Foto Bersama Auditor & Auditee wajib diupload!');  return; }
   if (!extraPhotos.commbook) { showError('Foto Communication Book wajib diupload!'); return; }
 
@@ -1017,53 +982,40 @@ async function submitSignatures() {
   auditInfo.fotoBersama  = extraPhotos.bersama;
   auditInfo.fotoCommBook = extraPhotos.commbook;
 
-  // Upload signatures ke Drive dulu (sama seperti foto),
-  // supaya di PDF hanya perlu URL bukan base64 besar
   var tanggal = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
   async function uploadSig(id) {
-    // Jika sudah ada Drive URL dari sesi sebelumnya, reuse saja (skip re-upload)
     var existingUrl = id === 'auditor' ? auditInfo.signAuditor : auditInfo.signPIC;
     if (existingUrl && existingUrl.startsWith('http') && sigState[id] && !_sigCtx[id]) {
-      // sigState true tapi ctx tidak ada = restored dari data lama, bukan TTD baru
       return existingUrl;
     }
-    // Jika TTD baru digambar (ctx ada dan punya drawing), upload baru
     var dataUrl = getSigDataURL(id);
-    if (!dataUrl) return existingUrl || ''; // fallback ke URL lama
+    if (!dataUrl) return existingUrl || '';
     try {
-      var r = await fetchWithTimeout(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body: JSON.stringify({
-          action: 'upload_photo',
-          base64Data: dataUrl,
-          fileName: 'signature_' + id + '_' + Date.now() + '.jpg',
-          nomorOutlet: auditInfo.nomorOutlet || 'sig',
-          tanggal: tanggal
-        })
-      }, 60000); // 60 detik timeout — jangan sampai hang selamanya
-      var txt    = await r.text();
-      var result = JSON.parse(txt);
-      return result.success ? result.url : dataUrl; // fallback ke base64 kalau gagal
+      var result = await postJSON(APPS_SCRIPT_URL, {
+        action: 'upload_photo',
+        base64Data: dataUrl,
+        fileName: 'signature_' + id + '_' + Date.now() + '.jpg',
+        nomorOutlet: auditInfo.nomorOutlet || 'sig',
+        tanggal: tanggal
+      }, 60000);
+      return result.success ? result.url : dataUrl;
     } catch(e) {
-      return dataUrl; // fallback — tetap punya base64-nya walau upload ke Drive gagal
+      return dataUrl;
     }
   }
 
-  // Show loading indicator
   var btn = document.querySelector('#screen-signature .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Mengupload TTD...'; }
 
   try {
     auditInfo.signAuditor = await uploadSig('auditor');
     auditInfo.signPIC     = await uploadSig('pic');
-    auditInfo.draftSignAuditor = ''; // sudah keupload permanen, draft base64 gak perlu lagi
+    auditInfo.draftSignAuditor = '';
     auditInfo.draftSignPIC     = '';
     saveProgress();
     showReview();
   } catch(e) {
-    // Apapun yang gagal tak terduga, jangan biarkan tombol nyangkut selamanya
     showError('Gagal memproses tanda tangan: ' + e.message + ' — coba lagi.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Lanjut Review →'; }
@@ -1071,9 +1023,6 @@ async function submitSignatures() {
 }
 
 // ── SCREEN HELPERS ───────────────────────────────────────────
-// Toast error — ini fungsi yang selama ini DIPANGGIL di 19 tempat tapi
-// gak pernah DIDEFINISIKAN, jadi validasi & pesan error selalu gagal
-// tampil (ReferenceError diam-diam, proses berhenti tanpa kejelasan).
 function showError(msg) {
   var existing = document.getElementById('error-toast');
   if (existing) existing.remove();
@@ -1130,23 +1079,21 @@ function restoreProgress() {
   auditInfo = saved.auditInfo;
   auditItems = saved.auditItems;
   currentSectionIdx = saved.currentSectionIdx || 0;
-  // Restore extraPhotos dari auditInfo
   extraPhotos = {
     bersama : (auditInfo && auditInfo.fotoBersama)  || '',
     commbook: (auditInfo && auditInfo.fotoCommBook) || ''
   };
   buildSectionScreens();
-  restoreItemVisuals(); // sync tampilan dengan auditItems
-  // Restore item foto thumbnails
+  restoreItemVisuals();
   ITEMS.forEach(function(item) {
     var resp = auditItems[item.code];
     if (resp && resp.fotoUrl) restoreFotoFromUrl(item.code, resp.fotoUrl);
   });
-  fillInfoFields(); // pastikan info fields terisi jika user back ke screen-info
+  fillInfoFields();
   if (currentSectionIdx >= SECTION_KEYS.length) {
-    showSignatureScreen(); // langsung ke TTD (pakai double-rAF restore-nya sendiri)
+    showSignatureScreen();
   } else {
-    restoreSignatureScreen(); // tetap restore data di background walau belum ke section-nya
+    restoreSignatureScreen();
     goToSection(currentSectionIdx);
   }
 }
@@ -1180,16 +1127,13 @@ function submitInfo() {
   if (!status)      { showError('Status Kebun wajib dipilih!');   document.getElementById('f-status').focus();      return; }
   if (!email || !email.includes('@')) { alert('Format email tidak valid!'); return; }
 
-  // PENTING: merge ke auditInfo yang ada, JANGAN reassign objek baru —
-  // kalau di-reassign, semua data yang udah di-restore sebelumnya
-  // (TTD, nama/jabatan PIC, foto bersama/commbook) bakal ketimpa hilang.
   Object.assign(auditInfo, { nomorOutlet:outlet, namaOutlet:namaOutlet, alamatKebun:alamat,
                 namaAuditor:auditor, tanggalAudit:tanggal,
                 posisiAuditor:posisi, kategoriAudit:kategori, statusKebun:status, emailPIC:email });
   saveProgress();
 
   buildSectionScreens();
-  restoreItemVisuals(); // sync tampilan dengan data tersimpan
+  restoreItemVisuals();
   goToSection(0);
 }
 
@@ -1199,7 +1143,6 @@ function restoreItemVisuals() {
     var resp = auditItems[item.code];
     if (!resp) return;
 
-    // Restore comply visual
     if (resp.comply === false) {
       var card   = document.getElementById('card-'     + item.code);
       var btnYa  = document.getElementById('btn-ya-'   + item.code);
@@ -1213,7 +1156,6 @@ function restoreItemVisuals() {
       }
     }
 
-    // Restore foto/video thumbnails — always, regardless of comply status
     if (resp.fotoUrls && resp.fotoUrls.length) {
       renderItemThumbs(item.code);
       var status = document.getElementById('foto-status-' + item.code);
@@ -1289,17 +1231,13 @@ function buildSectionScreens() {
   });
 }
 
-// ── BUILD SECTION ITEMS (dengan pembungkus visual per grouping) ────
-// Item dengan groupParent yang sama (mis. semua item IA1 = Dining Area)
-// dirender berurutan dalam satu ITEMS array, jadi cukup deteksi
-// pergantian groupParent untuk membuka/menutup wrapper grup.
 function buildSectionItemsHTML(sectionItems) {
   let html = '';
   let currentGroup = null;
 
   sectionItems.forEach(item => {
     if (item.groupParent !== currentGroup) {
-      if (currentGroup) html += '</div>'; // tutup wrapper grup sebelumnya
+      if (currentGroup) html += '</div>';
       currentGroup = item.groupParent;
       if (currentGroup) {
         const info = GROUP_INFO[currentGroup] || { label: currentGroup };
@@ -1313,7 +1251,7 @@ function buildSectionItemsHTML(sectionItems) {
     }
     html += buildItemHTML(item);
   });
-  if (currentGroup) html += '</div>'; // tutup wrapper grup terakhir
+  if (currentGroup) html += '</div>';
 
   return html;
 }
@@ -1356,14 +1294,11 @@ function setAnswer(code, comply) {
   card.className = 'item-card ' + (comply ? 'comply' : 'noncomply');
   btnYa .classList.toggle('selected', comply);
   btnTdk.classList.toggle('selected', !comply);
-  // Show catatan only for non-comply
   catatan.classList.toggle('hidden', comply);
   if (comply) { auditItems[code].catatan = ''; catatan.value = ''; }
   saveProgress();
 }
 
-// Render ulang semua thumbnail item dari auditItems[code].fotoUrls,
-// masing-masing dikasih tombol hapus (×) biar bisa ganti foto/video.
 function renderItemThumbs(code) {
   var container = document.getElementById('foto-thumbs-' + code);
   if (!container) return;
@@ -1398,8 +1333,6 @@ function renderItemThumbs(code) {
   });
 }
 
-// Hapus 1 foto/video dari suatu item (hanya melepas referensinya, tidak
-// menghapus file di Drive — supaya slot-nya kebuka lagi untuk upload baru)
 function removeFoto(code, idx) {
   if (!auditItems[code].fotoUrls) return;
   auditItems[code].fotoUrls.splice(idx, 1);
@@ -1431,8 +1364,6 @@ async function handleFotoSelect(event, code) {
     return;
   }
 
-  // Size check: foto maks 50MB (toh dikompres), video maks 20MB
-  // (di atas itu, base64 payload-nya jadi terlalu besar buat dikirim reliable via POST)
   var MAX_MB_IMG = 50, MAX_MB_VIDEO = 20;
   var tooBig = files.filter(function(f){
     var limit = f.type.startsWith('video/') ? MAX_MB_VIDEO : MAX_MB_IMG;
@@ -1453,7 +1384,6 @@ async function handleFotoSelect(event, code) {
   var container = document.getElementById('foto-thumbs-' + code);
   var tanggal   = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
-  // Update button to uploading state (use btn if exists, else find any upload label)
   var uploadLabels = document.querySelectorAll(
     'label[for="foto-cam-' + code + '"], label[for="foto-input-' + code + '"]');
   uploadLabels.forEach(function(l){
@@ -1469,7 +1399,6 @@ async function handleFotoSelect(event, code) {
     var file    = files[i];
     var isVideo = file.type.startsWith('video/');
 
-    // ── Local preview sementara menggunakan Object URL (tidak makan memory) ──
     var objectUrl = URL.createObjectURL(file);
     var tempEl = null;
     if (container) {
@@ -1482,11 +1411,10 @@ async function handleFotoSelect(event, code) {
     var sizeInfo = ' (' + (file.size / 1024 / 1024).toFixed(1) + 'MB)';
     if (status) status.textContent = 'Menyiapkan file ' + (i+1) + '/' + files.length + sizeInfo + '...';
 
-    // ── Upload ke Drive (dengan progress % + timeout, supaya gak nge-hang selamanya) ──
     try {
       var dataUrl, fileName;
       if (isVideo) {
-        dataUrl  = await fileToBase64(file); // perlu base64 untuk backend
+        dataUrl  = await fileToBase64(file);
         var ext  = (file.name.split('.').pop() || 'mp4').toLowerCase();
         fileName = code + '_' + Date.now() + '_' + i + '.' + ext;
       } else {
@@ -1494,22 +1422,17 @@ async function handleFotoSelect(event, code) {
         fileName = code + '_' + Date.now() + '_' + i + '.jpg';
       }
 
-      // Video lebih besar → kasih timeout lebih panjang (2 menit vs 1 menit untuk foto)
-      var r = await fetchWithTimeout(APPS_SCRIPT_URL, {
-        method : 'POST',
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body   : JSON.stringify({
-          action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
-          nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
-        })
+      if (status) status.textContent = 'Mengupload file ' + (i+1) + '/' + files.length + sizeInfo + '...';
+      var result = await postJSON(APPS_SCRIPT_URL, {
+        action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
+        nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
       }, isVideo ? 180000 : 60000);
-      if (status) status.textContent = 'Memproses file ' + (i+1) + '/' + files.length + sizeInfo + '...';
-      var result = JSON.parse(await r.text());
+
       if (result.success) {
         auditItems[code].fotoUrls.push(result.url);
         auditItems[code].fotoUrl = auditItems[code].fotoUrls[0];
         if (tempEl) tempEl.remove();
-        renderItemThumbs(code); // re-render semua thumb dari data tersimpan + tombol hapus
+        renderItemThumbs(code);
         saveProgress();
       } else {
         throw new Error(result.message || 'Upload gagal');
@@ -1519,13 +1442,11 @@ async function handleFotoSelect(event, code) {
       URL.revokeObjectURL(objectUrl);
       lastErrorMsg = e.name === 'AbortError'
         ? '⚠️ Timeout upload file ' + (i+1) + ' (koneksi terlalu lambat/putus)'
-        : '⚠️ Gagal upload file ' + (i+1) + ': ' + (e.message||'').substring(0, 60);
+        : '⚠️ Gagal upload file ' + (i+1) + ': ' + (e.message||'').substring(0, 80);
       if (status) status.textContent = lastErrorMsg;
-      // Lanjut ke file berikutnya (kalau ada) — 1 file gagal tidak boleh nge-block sisanya
     }
   }
 
-  // Restore upload buttons
   uploadLabels.forEach(function(l){
     l.style.opacity = '';
     l.style.pointerEvents = '';
@@ -1535,51 +1456,18 @@ async function handleFotoSelect(event, code) {
     btn.classList.add('uploaded');
     btn.innerHTML = String.fromCodePoint(0x2705) + ' ' + total + '/3 Tersimpan';
   }
-  // Update kamera & galeri labels
   uploadLabels.forEach(function(l){
     l.classList.add('uploaded');
     l.style.borderStyle = 'solid';
   });
-  // PENTING: jangan timpa pesan error terakhir kalau ada file yang gagal —
-  // tampilkan errornya + jumlah yang berhasil, bukan cuma angka generik.
   if (status) {
     status.textContent = lastErrorMsg
       ? lastErrorMsg + ' · ' + total + '/3 tersimpan'
       : total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
   }
-  event.target.value = ''; // reset input biar bisa pilih file yg sama lagi kalau perlu
+  event.target.value = '';
 }
 
-
-// Upload dengan progress % real (pakai XHR karena fetch() gak expose upload
-// progress). Ini juga yang kasih tau kalau upload beneran nge-hang vs cuma
-// lambat karena koneksi lemah — user bisa lihat angkanya jalan atau enggak.
-function uploadWithProgress(url, bodyObj, timeoutMs, onProgress) {
-  return new Promise(function(resolve, reject) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-    xhr.timeout = timeoutMs || 60000;
-    xhr.upload.onprogress = function(e) {
-      if (onProgress && e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
-    };
-    xhr.onload = function() {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try { resolve(JSON.parse(xhr.responseText)); }
-        catch (err) { reject(new Error('Respons server tidak valid (bukan JSON)')); }
-      } else {
-        reject(new Error('Server error: HTTP ' + xhr.status));
-      }
-    };
-    xhr.onerror = function() { reject(new Error('Koneksi gagal / network error')); };
-    xhr.ontimeout = function() {
-      var e = new Error('Timeout setelah ' + Math.round((timeoutMs||60000)/1000) + ' detik');
-      e.name = 'AbortError';
-      reject(e);
-    };
-    xhr.send(JSON.stringify(bodyObj));
-  });
-}
 
 // Fetch dengan timeout — mencegah upload nge-hang selamanya kalau koneksi
 // putus di tengah jalan (server sudah selesai proses tapi response gak balik).
@@ -1588,6 +1476,49 @@ function fetchWithTimeout(url, options, timeoutMs) {
   var timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 60000);
   return fetch(url, Object.assign({}, options, { signal: controller.signal }))
     .finally(function(){ clearTimeout(timer); });
+}
+
+// ── POST JSON DENGAN DETEKSI "RESPONS NYASAR" + RETRY OTOMATIS ──────
+// Kadang Apps Script balikin halaman HTML (bukan JSON dari doPost kita)
+// meskipun eksekusinya sendiri sukses di server — biasanya karena Google
+// menyelipkan halaman re-verifikasi/consent sesaat setelah redeploy, atau
+// redirect internal script.google.com → script.googleusercontent.com
+// yang nyangkut di tengah jalan (umum terjadi di Chrome Android).
+// Ini BUKAN error permanen, jadi retry beberapa kali dulu sebelum nyerah.
+async function postJSON(url, bodyObj, timeoutMs, maxRetries) {
+  if (maxRetries === undefined) maxRetries = 2;
+  var lastErr;
+  for (var attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      var r = await fetchWithTimeout(url, {
+        method : 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
+        body   : JSON.stringify(bodyObj)
+      }, timeoutMs);
+      var text = await r.text();
+      var trimmed = text.trim();
+      if (trimmed.charAt(0) === '<') {
+        var htmlErr = new Error('Respons server tidak valid (halaman HTML, bukan data)');
+        htmlErr.name = 'HtmlResponseError';
+        throw htmlErr;
+      }
+      return JSON.parse(text);
+    } catch (e) {
+      lastErr = e;
+      var isNetworkish = e.name === 'AbortError' || e.name === 'HtmlResponseError' || e instanceof TypeError;
+      if (attempt < maxRetries && isNetworkish) {
+        await new Promise(function(res){ setTimeout(res, 1200 * (attempt + 1)); });
+        continue;
+      }
+      break;
+    }
+  }
+  if (lastErr && lastErr.name === 'HtmlResponseError') {
+    var e2 = new Error('Server Google sedang re-verifikasi (biasa terjadi habis redeploy). Sudah dicoba ulang otomatis, tapi masih gagal — coba lagi sebentar lagi.');
+    e2.name = 'HtmlResponseError';
+    throw e2;
+  }
+  throw lastErr || new Error('Gagal terhubung ke server.');
 }
 
 function fileToBase64(file) {
@@ -1631,7 +1562,6 @@ function goToSection(idx) {
 }
 
 function nextSection(currentIdx) {
-  // Cek mandatory: catatan DAN minimal 1 bukti foto/video wajib diisi jika pilih "Tidak"
   var secKey   = SECTION_KEYS[currentIdx];
   var secItems = ITEMS.filter(function(i){ return i.section === secKey; });
   var missingCatatan = [];
@@ -1644,7 +1574,6 @@ function nextSection(currentIdx) {
     }
   });
   if (missingCatatan.length > 0 || missingBukti.length > 0) {
-    // Highlight dan scroll ke item pertama yang kosong
     var firstCode = missingCatatan[0] || missingBukti[0];
     var firstEl = document.getElementById('cat-' + firstCode);
     if (firstEl) { firstEl.style.borderColor = 'var(--red-600)'; firstEl.focus(); }
@@ -1659,7 +1588,7 @@ function nextSection(currentIdx) {
         if (el) el.style.borderColor = '';
       });
     }, 3000);
-    return; // jangan pindah section
+    return;
   }
 
   if (currentIdx === SECTION_KEYS.length - 1) {
@@ -1670,10 +1599,6 @@ function nextSection(currentIdx) {
 }
 
 // ── LIVE SCORE CALCULATION (preview, sebelum submit) ─────────────
-// Meniru persis formula calculateScores() di server (Code.gs) supaya
-// angka yang dilihat auditor di sini konsisten dengan yang ada di
-// laporan PDF/email nanti. Ini HANYA estimasi client-side — perhitungan
-// resmi tetap dilakukan ulang oleh server saat submit.
 const GROUPINGS_CLIENT = { EA:'S', IA1:'S', IA2:'S', IA3:'S', IA4:'S' };
 
 function calculateLiveScores() {
@@ -1732,7 +1657,6 @@ function calculateLiveScores() {
   return { brandScore, fsScore, finalScore, grade, sanksi };
 }
 
-// Tampilkan desimal HANYA jika ada (99.5 tetap "99.5", 100 tetap "100")
 function formatScoreClient(n) {
   const rounded = Math.round(n * 10) / 10;
   return (Math.abs(rounded - Math.round(rounded)) < 1e-9)
@@ -1825,7 +1749,7 @@ function showReview() {
 }
 
 // ── FINAL SUBMIT ──────────────────────────────────────────────
-function finalSubmit() {
+async function finalSubmit() {
   document.getElementById('btn-final-submit').disabled = true;
   showScreen('screen-submit');
   updateSubmitProgress('Memproses data audit...');
@@ -1834,7 +1758,6 @@ function finalSubmit() {
 
   updateSubmitProgress('Menyimpan ke database dan generate laporan PDF...');
 
-  // Loading messages - respon seharusnya datang dalam ~3 detik
   var loadMsgs = [
     'Mengirim data ke server...',
     'Memvalidasi data audit...',
@@ -1849,25 +1772,18 @@ function finalSubmit() {
     }
   }, 4000);
 
-  // Timeout 30 detik — dengan arsitektur async, response harusnya cepat
-  var ctrl    = new AbortController();
-  var timeout = setTimeout(function() { ctrl.abort(); }, 30000);
+  try {
+    // postJSON: kalau Google sempat balikin halaman HTML nyasar
+    // (re-auth/redirect), otomatis retry dulu sebelum benar-benar gagal.
+    // TIDAK pakai retry untuk timeout murni — itu ditangani terpisah di
+    // bawah karena submit_audit yang timeout biasanya TETAP jalan di
+    // server (arsitektur async), jadi retry di sini berisiko submit dobel.
+    var result = await postJSON(APPS_SCRIPT_URL, { action:'submit_audit', payload:payload }, 30000, 1);
+    clearInterval(msgTimer);
 
-  fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify({action:'submit_audit', payload:payload}),
-    signal: ctrl.signal
-  })
-  .then(function(r) { return r.text(); })
-  .then(function(txt) {
-    clearTimeout(timeout); clearInterval(msgTimer);
-    var result;
-    try { result = JSON.parse(txt); } catch(e) { result = {success:true}; }
     if (result && result.success) {
       document.getElementById('success-msg').textContent =
         result.message || 'Laporan berhasil dikirim ke email PIC outlet.';
-      // Simpan backup submission terakhir untuk keperluan revisi
       try {
         localStorage.setItem('audit_etika_last_submission', JSON.stringify({
           info: auditInfo, items: auditItems,
@@ -1881,14 +1797,13 @@ function finalSubmit() {
       showScreen('screen-review');
       document.getElementById('btn-final-submit').disabled = false;
     }
-  })
-  .catch(function(err) {
-    clearTimeout(timeout); clearInterval(msgTimer);
+  } catch (err) {
+    clearInterval(msgTimer);
     if (err.name === 'AbortError') {
-      // Timeout tapi mungkin masih proses — tampilkan success karena email biasanya terkirim
+      // Timeout tapi kemungkinan besar masih proses di server (arsitektur
+      // async) — tampilkan success, JANGAN retry (mencegah submit dobel).
       document.getElementById('success-msg').textContent =
         'Form berhasil disubmit! Laporan sedang diproses di server.\nCek email dalam 2-3 menit.';
-      // Simpan backup submission terakhir untuk keperluan revisi
       try {
         localStorage.setItem('audit_etika_last_submission', JSON.stringify({
           info: auditInfo, items: auditItems,
@@ -1897,12 +1812,19 @@ function finalSubmit() {
       } catch(e) {}
       clearProgress();
       showScreen('screen-success');
+    } else if (err.name === 'HtmlResponseError') {
+      // Sudah dicoba ulang otomatis oleh postJSON dan tetap gagal —
+      // JANGAN auto-retry lagi di sini (risiko submit dobel). Minta
+      // auditor coba manual, kasih tahu ini bukan kesalahan data mereka.
+      showError(err.message);
+      showScreen('screen-review');
+      document.getElementById('btn-final-submit').disabled = false;
     } else {
       showError('Gagal terhubung ke server: ' + err.message);
       showScreen('screen-review');
       document.getElementById('btn-final-submit').disabled = false;
     }
-  });
+  }
 }
 
 function updateSubmitProgress(msg) {
@@ -1920,17 +1842,12 @@ function resetForm() {
   ITEMS.forEach(i => { auditItems[i.code] = { comply:true, catatan:'', fotoUrl:'' }; });
   document.getElementById('screen-sections').innerHTML = '';
 
-  // Kosongkan juga field-field di halaman "Informasi Audit" — sebelumnya
-  // cuma state JS-nya yang direset, elemen <input>-nya masih nyimpen value lama.
   ['f-outlet','f-nama-outlet','f-alamat','f-auditor','f-tanggal','f-posisi','f-status','f-kategori','f-email']
     .forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.value = '';
     });
 
-  // Kosongkan juga halaman Tanda Tangan: nama/jabatan PIC, canvas ttd,
-  // dan foto dokumentasi (Bersama / Communication Book) — sama-sama
-  // ketinggalan dari submission sebelumnya kalau gak direset manual.
   ['f-pic-nama','f-pic-jabatan'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) el.value = '';
@@ -1957,7 +1874,6 @@ function loadLastSubmission() {
     var saved = JSON.parse(raw);
     var subTime = saved.submittedAt ? new Date(saved.submittedAt).toLocaleString('id-ID') : '-';
 
-    // Konfirmasi
     var banner = document.createElement('div');
     banner.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
     var box = document.createElement('div');
@@ -2016,12 +1932,10 @@ function confirmLoadLast() {
     extraPhotos = { bersama: auditInfo.fotoBersama||'', commbook: auditInfo.fotoCommBook||'' };
     saveProgress();
 
-    // Rebuild section screens lalu sync visual state
     buildSectionScreens();
     restoreItemVisuals();
-    restoreSignatureScreen(); // restore TTD, nama/jabatan PIC, foto bersama/commbook
+    restoreSignatureScreen();
 
-    // Pre-fill info fields & langsung ke info screen untuk edit
     fillInfoFields();
     showScreen('screen-info');
   } catch(e) {
