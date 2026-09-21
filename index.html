@@ -127,16 +127,23 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
 }
 
 /* ── GROUP WRAPPER (penanda visual kumpulan item 1 grouping) ── */
+/* Warna per grouping diatur lewat CSS var --group-color, di-set inline
+   oleh JS per grouping (lihat GROUP_INFO) — supaya tiap grouping di
+   Interior Appearance punya warna beda, jadi auditor nggak bingung
+   pas scroll ngelewatin banyak grouping berurutan (EA cuma 1 grouping
+   jadi tetap amber, aman dari kebingungan itu). */
 .group-wrapper {
-  border: 1.5px dashed var(--amber-600); border-radius: 14px;
-  padding: 12px 12px 4px; margin-bottom: 16px; background: rgba(217,119,6,.04);
+  --group-color: var(--amber-600); /* fallback kalau JS lupa nyetel */
+  --group-bg: rgba(217,119,6,.04);  /* fallback */
+  border: 1.5px dashed var(--group-color); border-radius: 14px;
+  padding: 12px 12px 4px; margin-bottom: 16px; background: var(--group-bg);
 }
 .group-header {
   display: flex; flex-direction: column; gap: 2px;
   margin-bottom: 10px; padding: 0 4px;
 }
 .group-header-title {
-  font-size: 13px; font-weight: 700; color: var(--amber-600);
+  font-size: 13px; font-weight: 700; color: var(--group-color);
 }
 .group-header-note {
   font-size: 11px; color: var(--gray-600);
@@ -599,12 +606,16 @@ const SECTION_LABELS = {
 };
 
 // ── GROUPING INFO ────────────────────────────────────────────
+// Warna beda per grouping (khusus Interior Appearance yang punya 4
+// grouping berurutan) supaya auditor nggak bingung pas scroll dari 1
+// grouping ke grouping lain. EA cuma 1 grouping tunggal di section-nya
+// jadi tetap amber — aman, nggak ada risiko ketuker.
 const GROUP_INFO = {
-  EA : { label: "Exterior Appearance" },
-  IA1: { label: "Dining Area" },
-  IA2: { label: "Toilet" },
-  IA3: { label: "Area Kerja & Gudang" },
-  IA4: { label: "Equipment" }
+  EA : { label: "Exterior Appearance", color: "#D97706", bg: "rgba(217,119,6,.05)"  }, // amber
+  IA1: { label: "Dining Area",         color: "#D97706", bg: "rgba(217,119,6,.05)"  }, // amber
+  IA2: { label: "Toilet",              color: "#2563EB", bg: "rgba(37,99,235,.05)"  }, // biru
+  IA3: { label: "Area Kerja & Gudang", color: "#0D9488", bg: "rgba(13,148,136,.06)" }, // teal
+  IA4: { label: "Equipment",           color: "#7C3AED", bg: "rgba(124,58,237,.05)" }  // ungu
 };
 
 // ── STATE ────────────────────────────────────────────────────
@@ -1240,9 +1251,9 @@ function buildSectionItemsHTML(sectionItems) {
       if (currentGroup) html += '</div>';
       currentGroup = item.groupParent;
       if (currentGroup) {
-        const info = GROUP_INFO[currentGroup] || { label: currentGroup };
+        const info = GROUP_INFO[currentGroup] || { label: currentGroup, color: '#D97706', bg: 'rgba(217,119,6,.05)' };
         html += `
-          <div class="group-wrapper">
+          <div class="group-wrapper" style="--group-color:${info.color};--group-bg:${info.bg};">
             <div class="group-header">
               <span class="group-header-title">📦 Grouping: ${info.label}</span>
               <span class="group-header-note">Poin di kategori ini berkurang HANYA jika SEMUA item di bawah dijawab "Tidak"</span>
