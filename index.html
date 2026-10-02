@@ -248,7 +248,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
   <h1 class="splash-title">Form Audit ETIKA</h1>
   <p class="splash-sub">Esteh Indonesia<br>Food Safety · Brand Standards · Local Standards</p>
   <button class="splash-btn" onclick="startForm()">Mulai Audit →</button>
-  <p class="splash-info">84 checklist item · Foto dari kamera atau galeri · Maks 3/item<br>🎥 Video maks 35 MB (±30–60 detik, set kamera ke 720p)</p>
+  <p class="splash-info">84 checklist item · Foto dari kamera atau galeri · Maks 3/item<br>📷 Foto maks 50 MB · 🎥 Video maks 35 MB (±15 dtk di 1080p, ±30 dtk di 720p)</p>
 </div>
 
 <!-- ── INFORMASI AUDIT ──────────────────────────────────── -->
@@ -402,7 +402,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
         <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto-cam-bersama" onchange="handleExtraPhoto(event,'bersama')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-bersama" onchange="handleExtraPhoto(event,'bersama')">
         <label class="foto-btn" id="foto-btn-bersama" style="font-size:12px;padding:8px 10px;" for="foto-cam-bersama">📷 Kamera</label>
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-bersama">🖼 Galeri</label>
+        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" id="foto-gal-bersama" for="foto-input-bersama">🖼 Galeri</label>
         <button type="button" class="foto-btn" id="foto-remove-bersama" style="display:none;font-size:12px;padding:8px 10px;color:var(--red-600);border-color:var(--red-600);" onclick="removeExtraFoto('bersama')">🗑 Hapus</button>
         <img class="foto-thumb" id="foto-thumb-bersama">
         <span class="upload-status" id="foto-status-bersama"></span>
@@ -416,7 +416,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
         <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto-cam-commbook" onchange="handleExtraPhoto(event,'commbook')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-commbook" onchange="handleExtraPhoto(event,'commbook')">
         <label class="foto-btn" id="foto-btn-commbook" style="font-size:12px;padding:8px 10px;" for="foto-cam-commbook">📷 Kamera</label>
-        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-commbook">🖼 Galeri</label>
+        <label class="foto-btn" style="font-size:12px;padding:8px 10px;" id="foto-gal-commbook" for="foto-input-commbook">🖼 Galeri</label>
         <button type="button" class="foto-btn" id="foto-remove-commbook" style="display:none;font-size:12px;padding:8px 10px;color:var(--red-600);border-color:var(--red-600);" onclick="removeExtraFoto('commbook')">🗑 Hapus</button>
         <img class="foto-thumb" id="foto-thumb-commbook">
         <span class="upload-status" id="foto-status-commbook"></span>
@@ -791,6 +791,15 @@ function retryThumbOnError(img, src) {
   img.src = src;
 }
 
+
+// Tandai HANYA tombol yang dipakai auditor (Kamera atau Galeri) dengan outline hijau
+function setExtraUsedButton(key, via) {
+  var cam = document.getElementById('foto-btn-' + key);
+  var gal = document.getElementById('foto-gal-' + key);
+  if (cam) { cam.classList.remove('uploading'); cam.classList.toggle('uploaded', via === 'cam'); cam.innerHTML = '📷 Kamera'; }
+  if (gal) { gal.classList.remove('uploading'); gal.classList.toggle('uploaded', via === 'gal'); gal.innerHTML = '🖼 Galeri'; }
+}
+
 // ── RESTORE FOTO DARI URL (untuk revisi / reload) ────────────────
 function restoreFotoFromUrl(code, url) {
   if (!url) return;
@@ -822,7 +831,7 @@ function restoreExtraFotoFromUrl(key, url) {
   var thumb = document.getElementById('foto-thumb-' + key);
   var status= document.getElementById('foto-status-'+ key);
   extraPhotos[key] = url;
-  if (btn) { btn.classList.add('uploaded'); btn.innerHTML = '📷 Kamera'; }
+  setExtraUsedButton(key, auditInfo['via' + key] || '');
   if (thumb) {
     var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (fileIdMatch) {
@@ -968,7 +977,9 @@ async function handleExtraPhoto(event, key) {
 async function _handleExtraPhotoInner(event, key) {
   var file = event.target.files[0];
   if (!file) return;
-  var btn      = document.getElementById('foto-btn-' + key);
+  var usedGallery = (event.target.id || '').indexOf('foto-input-') === 0;
+  var btn      = document.getElementById((usedGallery ? 'foto-gal-' : 'foto-btn-') + key);
+  var btnLabel = usedGallery ? '🖼 Galeri' : '📷 Kamera';
   var thumb    = document.getElementById('foto-thumb-' + key);
   var status   = document.getElementById('foto-status-' + key);
   var removeBtn= document.getElementById('foto-remove-' + key);
@@ -1007,12 +1018,14 @@ async function _handleExtraPhotoInner(event, key) {
       auditInfo.fotoBersama  = extraPhotos.bersama;
       auditInfo.fotoCommBook = extraPhotos.commbook;
       saveProgress();
-      if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '📷 Kamera'; }
+      auditInfo['via' + key] = usedGallery ? 'gal' : 'cam';
+      saveProgress();
+      setExtraUsedButton(key, auditInfo['via' + key]);
       if (status) status.textContent = 'Tersimpan';
       if (removeBtn) removeBtn.style.display = '';
     } else { throw new Error(result.message); }
   } catch(e) {
-    if (btn) { btn.classList.remove('uploading'); btn.innerHTML = '📷 Kamera'; }
+    setExtraUsedButton(key, extraPhotos[key] ? (auditInfo['via' + key] || '') : '');
     if (status) status.textContent = e.name === 'AbortError'
       ? 'Timeout — koneksi terlalu lama, coba lagi'
       : 'Gagal upload: ' + (e.message || '').substring(0, 80);
@@ -1022,6 +1035,8 @@ async function _handleExtraPhotoInner(event, key) {
 }
 
 function removeExtraFoto(key) {
+  auditInfo['via' + key] = '';
+  setExtraUsedButton(key, '');
   extraPhotos[key] = '';
   if (key === 'bersama') auditInfo.fotoBersama = '';
   if (key === 'commbook') auditInfo.fotoCommBook = '';
@@ -1290,7 +1305,7 @@ function buildSectionScreens() {
       <div class="content" id="content-${secKey}">
         <div class="section-card">
           <div class="section-card-name">${SECTION_LABELS[secKey]}</div>
-          <div class="section-card-sub">${sectionItems.length} item checklist · Tap ✅/❌ per item<br>📎 Maks 3 file/item · 🎥 video maks 35 MB (±30–60 dtk di 720p)</div>
+          <div class="section-card-sub">${sectionItems.length} item checklist · Tap ✅/❌ per item<br>📎 Maks 3 file/item · 📷 foto maks 50 MB · 🎥 video maks 35 MB (±15 dtk di 1080p, ±30 dtk di 720p)</div>
         </div>
         ${buildSectionItemsHTML(sectionItems)}
       </div>
@@ -2082,7 +2097,7 @@ function showOversizeDialog(files) {
   var urls = [];
   var m = _modal('<p style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ File terlalu besar</p>'
     + '<p style="font-size:13px;line-height:1.5;color:#4B5563;margin-bottom:12px;">Batas upload: video ' + LIMIT_VIDEO_MB
-    + ' MB, foto ' + LIMIT_IMG_MB + ' MB. <b>Rekamanmu belum hilang.</b> Simpan dulu ke HP, potong (trim) di Galeri sampai di bawah batas, lalu pilih lewat tombol Galeri.</p>');
+    + ' MB, foto ' + LIMIT_IMG_MB + ' MB. <b>Rekamanmu belum hilang.</b> Kalau sudah ada di Galeri HP (mis. folder Camera), langsung potong (trim) di sana sampai di bawah batas, lalu pilih lewat tombol Galeri — tidak perlu simpan lagi. Tombol di bawah hanya kalau file-nya tidak muncul di Galeri.</p>');
   m.overlay.id = 'oversize-dialog';
   files.forEach(function(f, i) {
     var url  = URL.createObjectURL(f); urls.push(url);
@@ -2093,8 +2108,8 @@ function showOversizeDialog(files) {
     label.style.cssText = 'font-size:12px;color:#4B5563;margin-bottom:6px;word-break:break-all;';
     label.textContent = name + ' · ' + (f.size / 1024 / 1024).toFixed(1) + ' MB';
     var a = document.createElement('a');
-    a.href = url; a.download = name; a.textContent = '💾 Simpan ke HP';
-    a.style.cssText = 'display:inline-block;padding:9px 14px;background:#1B4332;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;';
+    a.href = url; a.download = name; a.textContent = '💾 Simpan ke HP (cadangan)';
+    a.style.cssText = 'display:inline-block;padding:9px 14px;background:#fff;color:#1B4332;border:1.5px solid #1B4332;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;';
     row.appendChild(label); row.appendChild(a);
     m.box.appendChild(row);
   });
@@ -2113,9 +2128,10 @@ function showVideoTips(inputId) {
   var m = _modal('<p style="font-weight:700;font-size:16px;margin-bottom:8px;">🎥 Sebelum rekam video</p>'
     + '<ul style="font-size:13px;line-height:1.6;color:#374151;padding-left:18px;margin-bottom:14px;">'
     + '<li>Batas upload: <b>' + LIMIT_VIDEO_MB + ' MB</b> per video.</li>'
-    + '<li>Perkiraan durasi: ±15–30 detik di 1080p, ±40–70 detik di 720p. Di 4K hanya beberapa detik.</li>'
+    + '<li>Perkiraan durasi: ±15 detik di 1080p, ±30 detik di 720p (beda-beda tiap HP). Di 4K hanya beberapa detik.</li>'
     + '<li>Set resolusi video kamera ke <b>HD 720p</b> dulu, dan rekam per bagian (beberapa video pendek lebih aman).</li>'
-    + '<li>Kalau kelewat batas, videomu tidak hilang — nanti ada opsi simpan ke HP.</li></ul>');
+    + '<li>Di sebagian HP (mis. Samsung), video dari kamera ikut tersimpan di Galeri — hapus setelah audit selesai supaya penyimpanan tidak penuh.</li>'
+    + '<li>Kalau kelewat batas, videomu tidak hilang — nanti ada petunjuk untuk memotongnya.</li></ul>');
   var wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex;gap:8px;';
   wrap.appendChild(_modalBtn('Batal', false, function() { m.overlay.remove(); }));
