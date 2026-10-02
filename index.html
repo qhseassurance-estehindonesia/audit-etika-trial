@@ -248,7 +248,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
   <h1 class="splash-title">Form Audit ETIKA</h1>
   <p class="splash-sub">Esteh Indonesia<br>Food Safety · Brand Standards · Local Standards</p>
   <button class="splash-btn" onclick="startForm()">Mulai Audit →</button>
-  <p class="splash-info">84 checklist item · Foto dari kamera atau galeri · Maks 3/item</p>
+  <p class="splash-info">84 checklist item · Foto dari kamera atau galeri · Maks 3/item<br>🎥 Video maks 35 MB (±30–60 detik, set kamera ke 720p)</p>
 </div>
 
 <!-- ── INFORMASI AUDIT ──────────────────────────────────── -->
@@ -644,6 +644,19 @@ let auditItems     = {};
 let currentSectionIdx = 0;
 const SECTION_KEYS = Object.keys(SECTION_LABELS);
 const STORAGE_KEY  = 'audit_etika_progress';
+const LIMIT_IMG_MB   = 50;
+const LIMIT_VIDEO_MB = 35;
+const PENDING_KEY  = 'audit_etika_pending_capture';
+var uploadsInFlight = 0;
+function setPendingCapture(target) { try { localStorage.setItem(PENDING_KEY, JSON.stringify({ target: target, ts: Date.now() })); } catch(e) {} }
+function clearPendingCapture()     { try { localStorage.removeItem(PENDING_KEY); } catch(e) {} }
+function readPendingCapture() {
+  try {
+    var p = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+    if (p && Date.now() - p.ts < 15 * 60 * 1000) return p;
+  } catch(e) {}
+  return null;
+}
 
 // Inisialisasi semua item default = comply:true
 ITEMS.forEach(i => { auditItems[i.code] = { comply: true, catatan: '', fotoUrl: '' }; });
@@ -763,6 +776,21 @@ function _markSig(id) {
   }, 600);
 }
 
+
+// Muat gambar thumbnail Drive; kalau gagal (belum selesai diproses), coba lagi bertahap
+function retryThumbOnError(img, src) {
+  var delays = [3000, 5000, 8000, 12000, 20000, 30000, 45000, 60000, 90000], n = 0;
+  img.onerror = function() {
+    if (n >= delays.length) { img.onerror = null; return; }
+    var d = delays[n++];
+    setTimeout(function() {
+      if (!document.body.contains(img)) return;
+      img.src = src + (src.indexOf('?') > -1 ? '&' : '?') + 't=' + Date.now();
+    }, d);
+  };
+  img.src = src;
+}
+
 // ── RESTORE FOTO DARI URL (untuk revisi / reload) ────────────────
 function restoreFotoFromUrl(code, url) {
   if (!url) return;
@@ -776,7 +804,7 @@ function restoreFotoFromUrl(code, url) {
   if (thumb) {
     var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (fileIdMatch) {
-      thumb.src = 'https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120';
+      retryThumbOnError(thumb, 'https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120');
     } else {
       thumb.src = url;
     }
@@ -794,11 +822,11 @@ function restoreExtraFotoFromUrl(key, url) {
   var thumb = document.getElementById('foto-thumb-' + key);
   var status= document.getElementById('foto-status-'+ key);
   extraPhotos[key] = url;
-  if (btn) { btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
+  if (btn) { btn.classList.add('uploaded'); btn.innerHTML = '📷 Kamera'; }
   if (thumb) {
     var fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (fileIdMatch) {
-      thumb.src = 'https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120';
+      retryThumbOnError(thumb, 'https://drive.google.com/thumbnail?id=' + fileIdMatch[1] + '&sz=w120');
     } else {
       thumb.src = url;
     }
@@ -933,6 +961,11 @@ function showSignatureScreen() {
 var extraPhotos = { bersama: '', commbook: '' };
 
 async function handleExtraPhoto(event, key) {
+  uploadsInFlight++;
+  try { await _handleExtraPhotoInner(event, key); }
+  finally { uploadsInFlight--; if (!uploadsInFlight) clearPendingCapture(); }
+}
+async function _handleExtraPhotoInner(event, key) {
   var file = event.target.files[0];
   if (!file) return;
   var btn      = document.getElementById('foto-btn-' + key);
@@ -940,6 +973,11 @@ async function handleExtraPhoto(event, key) {
   var status   = document.getElementById('foto-status-' + key);
   var removeBtn= document.getElementById('foto-remove-' + key);
   var isVideo  = file.type.startsWith('video/');
+  if (file.size > (isVideo ? LIMIT_VIDEO_MB : LIMIT_IMG_MB) * 1024 * 1024) {
+    showOversizeDialog([file]);
+    event.target.value = '';
+    return;
+  }
 
   if (btn) { btn.classList.add('uploading'); btn.innerHTML = '⏳ Mengupload...'; }
   if (status) status.textContent = 'Mengupload...';
@@ -969,12 +1007,12 @@ async function handleExtraPhoto(event, key) {
       auditInfo.fotoBersama  = extraPhotos.bersama;
       auditInfo.fotoCommBook = extraPhotos.commbook;
       saveProgress();
-      if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '✅ Foto Tersimpan'; }
+      if (btn) { btn.classList.remove('uploading'); btn.classList.add('uploaded'); btn.innerHTML = '📷 Kamera'; }
       if (status) status.textContent = 'Tersimpan';
       if (removeBtn) removeBtn.style.display = '';
     } else { throw new Error(result.message); }
   } catch(e) {
-    if (btn) { btn.classList.remove('uploading'); btn.innerHTML = '⚠️ Coba Lagi'; }
+    if (btn) { btn.classList.remove('uploading'); btn.innerHTML = '📷 Kamera'; }
     if (status) status.textContent = e.name === 'AbortError'
       ? 'Timeout — koneksi terlalu lama, coba lagi'
       : 'Gagal upload: ' + (e.message || '').substring(0, 80);
@@ -1252,7 +1290,7 @@ function buildSectionScreens() {
       <div class="content" id="content-${secKey}">
         <div class="section-card">
           <div class="section-card-name">${SECTION_LABELS[secKey]}</div>
-          <div class="section-card-sub">${sectionItems.length} item checklist · Tap ✅/❌ per item</div>
+          <div class="section-card-sub">${sectionItems.length} item checklist · Tap ✅/❌ per item<br>📎 Maks 3 file/item · 🎥 video maks 35 MB (±30–60 dtk di 720p)</div>
         </div>
         ${buildSectionItemsHTML(sectionItems)}
       </div>
@@ -1357,6 +1395,36 @@ function renderItemThumbs(code) {
     thumbEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #74C69D;cursor:pointer;display:block;';
     thumbEl.title = 'Klik untuk lihat di Drive';
     thumbEl.onclick = function(){ window.open(url, '_blank'); };
+    // Thumbnail Drive kadang belum siap (file baru diupload, apalagi video).
+    // Tampilkan placeholder dulu, cek ulang di latar belakang (±4,5 menit),
+    // dan begitu siap otomatis diganti thumbnail asli.
+    var thumbStarted = false;
+    thumbEl.onerror = function(){
+      if (thumbStarted) return;
+      thumbStarted = true;
+      var ph = document.createElement('div');
+      ph.textContent = '🎞';
+      ph.title = 'Thumbnail sedang diproses Drive — klik untuk buka file';
+      ph.style.cssText = 'width:52px;height:52px;border-radius:6px;border:2px solid #74C69D;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:#F0FFF4;';
+      ph.onclick = function(){ window.open(url, '_blank'); };
+      if (thumbEl.parentNode) thumbEl.parentNode.replaceChild(ph, thumbEl);
+      var delays = [3000, 5000, 8000, 12000, 20000, 30000, 45000, 60000, 90000];
+      (function probe(i){
+        if (i >= delays.length) return;
+        setTimeout(function(){
+          if (!document.body.contains(ph)) return;   // item dihapus / dirender ulang -> stop
+          var probeImg = new Image();
+          probeImg.onload = function(){
+            if (!ph.parentNode) return;
+            thumbEl.onerror = null;
+            thumbEl.src = probeImg.src;
+            ph.parentNode.replaceChild(thumbEl, ph);
+          };
+          probeImg.onerror = function(){ probe(i + 1); };
+          probeImg.src = previewSrc + (previewSrc.indexOf('?') > -1 ? '&' : '?') + 't=' + Date.now();
+        }, delays[i]);
+      })(0);
+    };
     wrap.appendChild(thumbEl);
 
     var delBtn = document.createElement('button');
@@ -1392,6 +1460,11 @@ function removeFoto(code, idx) {
 
 // ── FOTO UPLOAD ───────────────────────────────────────────────
 async function handleFotoSelect(event, code) {
+  uploadsInFlight++;
+  try { await _handleFotoSelectInner(event, code); }
+  finally { uploadsInFlight--; if (!uploadsInFlight) clearPendingCapture(); }
+}
+async function _handleFotoSelectInner(event, code) {
   var files = Array.from(event.target.files);
   if (!files.length) return;
 
@@ -1404,19 +1477,18 @@ async function handleFotoSelect(event, code) {
     return;
   }
 
-  var MAX_MB_IMG = 50, MAX_MB_VIDEO = 35;
+  var MAX_MB_IMG = LIMIT_IMG_MB, MAX_MB_VIDEO = LIMIT_VIDEO_MB;
   var tooBig = files.filter(function(f){
     var limit = f.type.startsWith('video/') ? MAX_MB_VIDEO : MAX_MB_IMG;
     return f.size > limit * 1024 * 1024;
   });
   if (tooBig.length > 0) {
-    showError(tooBig.length + ' file kelewat besar (video maks ' + MAX_MB_VIDEO + 'MB, foto maks '
-      + MAX_MB_IMG + 'MB). Rekam di resolusi 720p atau trim videonya dulu ya.');
+    showOversizeDialog(tooBig);
     files = files.filter(function(f){
       var limit = f.type.startsWith('video/') ? MAX_MB_VIDEO : MAX_MB_IMG;
       return f.size <= limit * 1024 * 1024;
     });
-    if (!files.length) return;
+    if (!files.length) { event.target.value = ''; return; }
   }
 
   var btn       = document.getElementById('foto-btn-' + code);
@@ -1439,13 +1511,11 @@ async function handleFotoSelect(event, code) {
     var file    = files[i];
     var isVideo = file.type.startsWith('video/');
 
-    var objectUrl = URL.createObjectURL(file);
     var tempEl = null;
     if (container) {
-      tempEl = document.createElement(isVideo ? 'video' : 'img');
-      tempEl.src = objectUrl;
-      tempEl.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px dashed #74C69D;opacity:.6;';
-      if (isVideo) { tempEl.muted = true; tempEl.playsInline = true; }
+      tempEl = document.createElement('div');
+      tempEl.textContent = isVideo ? '🎬' : '🖼';
+      tempEl.style.cssText = 'width:52px;height:52px;border-radius:6px;border:2px dashed #74C69D;opacity:.7;display:flex;align-items:center;justify-content:center;font-size:22px;';
       container.appendChild(tempEl);
     }
     var sizeInfo = ' (' + (file.size / 1024 / 1024).toFixed(1) + 'MB)';
@@ -1479,7 +1549,6 @@ async function handleFotoSelect(event, code) {
       }
     } catch(e) {
       if (tempEl) tempEl.remove();
-      URL.revokeObjectURL(objectUrl);
       lastErrorMsg = e.name === 'AbortError'
         ? '⚠️ Timeout upload file ' + (i+1) + ' (koneksi terlalu lambat/putus)'
         : '⚠️ Gagal upload file ' + (i+1) + ': ' + (e.message||'').substring(0, 80);
@@ -1982,6 +2051,133 @@ function confirmLoadLast() {
     showError('Gagal memuat: ' + e.message);
   }
 }
+
+// ================================================================
+//  MODAL, TIPS VIDEO, DIALOG FILE BESAR, PEMULIHAN SETELAH KAMERA
+// ================================================================
+function _modal(innerHTML) {
+  var o = document.createElement('div');
+  o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px;';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:16px;padding:22px;max-width:340px;width:100%;max-height:90vh;overflow:auto;color:#111827;font-family:inherit;';
+  box.innerHTML = innerHTML;
+  o.appendChild(box);
+  document.body.appendChild(o);
+  return { overlay: o, box: box };
+}
+function _modalBtn(text, primary, onclick) {
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = text;
+  b.style.cssText = 'flex:1;padding:12px;border-radius:10px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;'
+    + (primary ? 'border:none;background:#1B4332;color:#fff;' : 'border:1.5px solid #ccc;background:#fff;color:#111827;');
+  b.onclick = onclick;
+  return b;
+}
+
+// File melebihi batas: JANGAN hilang — kasih opsi simpan ke HP
+function showOversizeDialog(files) {
+  var old = document.getElementById('oversize-dialog');
+  if (old) old.remove();
+  var urls = [];
+  var m = _modal('<p style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ File terlalu besar</p>'
+    + '<p style="font-size:13px;line-height:1.5;color:#4B5563;margin-bottom:12px;">Batas upload: video ' + LIMIT_VIDEO_MB
+    + ' MB, foto ' + LIMIT_IMG_MB + ' MB. <b>Rekamanmu belum hilang.</b> Simpan dulu ke HP, potong (trim) di Galeri sampai di bawah batas, lalu pilih lewat tombol Galeri.</p>');
+  m.overlay.id = 'oversize-dialog';
+  files.forEach(function(f, i) {
+    var url  = URL.createObjectURL(f); urls.push(url);
+    var name = f.name || ('rekaman_' + Date.now() + '_' + i + (f.type.indexOf('video') === 0 ? '.mp4' : '.jpg'));
+    var row  = document.createElement('div');
+    row.style.cssText = 'margin-bottom:10px;padding:10px;background:#F3F4F6;border-radius:10px;';
+    var label = document.createElement('div');
+    label.style.cssText = 'font-size:12px;color:#4B5563;margin-bottom:6px;word-break:break-all;';
+    label.textContent = name + ' · ' + (f.size / 1024 / 1024).toFixed(1) + ' MB';
+    var a = document.createElement('a');
+    a.href = url; a.download = name; a.textContent = '💾 Simpan ke HP';
+    a.style.cssText = 'display:inline-block;padding:9px 14px;background:#1B4332;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;';
+    row.appendChild(label); row.appendChild(a);
+    m.box.appendChild(row);
+  });
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;margin-top:6px;';
+  wrap.appendChild(_modalBtn('Tutup', false, function() {
+    m.overlay.remove();
+    setTimeout(function() { urls.forEach(function(u) { URL.revokeObjectURL(u); }); }, 60000);
+  }));
+  m.box.appendChild(wrap);
+}
+
+// Tips sebelum rekam video (sekali per sesi browser)
+function videoTipsSeen() { try { return sessionStorage.getItem('etika_vid_tips') === '1'; } catch(e) { return true; } }
+function showVideoTips(inputId) {
+  var m = _modal('<p style="font-weight:700;font-size:16px;margin-bottom:8px;">🎥 Sebelum rekam video</p>'
+    + '<ul style="font-size:13px;line-height:1.6;color:#374151;padding-left:18px;margin-bottom:14px;">'
+    + '<li>Batas upload: <b>' + LIMIT_VIDEO_MB + ' MB</b> per video.</li>'
+    + '<li>Perkiraan durasi: ±15–30 detik di 1080p, ±40–70 detik di 720p. Di 4K hanya beberapa detik.</li>'
+    + '<li>Set resolusi video kamera ke <b>HD 720p</b> dulu, dan rekam per bagian (beberapa video pendek lebih aman).</li>'
+    + '<li>Kalau kelewat batas, videomu tidak hilang — nanti ada opsi simpan ke HP.</li></ul>');
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:8px;';
+  wrap.appendChild(_modalBtn('Batal', false, function() { m.overlay.remove(); }));
+  wrap.appendChild(_modalBtn('Mengerti, buka kamera', true, function() {
+    try { sessionStorage.setItem('etika_vid_tips', '1'); } catch(e) {}
+    m.overlay.remove();
+    var inp = document.getElementById(inputId);
+    if (inp) {
+      setPendingCapture(inputId.replace(/^foto-(cam|vid|input)-/, ''));
+      inp.click();
+    }
+  }));
+  m.box.appendChild(wrap);
+}
+
+// Tandai item yang sedang dikerjakan sebelum kamera/galeri dibuka
+document.addEventListener('click', function(e) {
+  var lb = e.target && e.target.closest ? e.target.closest('label.foto-btn[for]') : null;
+  if (!lb) return;
+  var forId = lb.getAttribute('for') || '';
+  var m = forId.match(/^foto-(cam|vid|input)-(.+)$/);
+  if (!m) return;
+  if (m[1] === 'vid' && !videoTipsSeen()) {
+    e.preventDefault();
+    showVideoTips(forId);
+    return;
+  }
+  setPendingCapture(m[2]);
+}, true);
+
+// Kalau tab kembali aktif dan tidak ada upload berjalan, tandai tidak jadi ambil foto
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') {
+    setTimeout(function() { if (!uploadsInFlight) clearPendingCapture(); }, 3000);
+  }
+});
+
+// Pemulihan: Chrome menutup tab saat kamera terbuka (memori HP penuh)
+function scrollToCaptureTarget(t) {
+  var el = document.getElementById('card-' + t) || document.getElementById('foto-btn-' + t);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+}
+function checkCaptureRecovery() {
+  var p     = readPendingCapture();
+  var saved = loadProgress();
+  if (!p || !saved || !saved.auditInfo || !saved.auditInfo.nomorOutlet) return;
+  var outlet = String(saved.auditInfo.nomorOutlet).replace(/[^0-9A-Za-z\-]/g, '');
+  var m = _modal('<p style="font-weight:700;font-size:16px;margin-bottom:8px;">⚠️ Halaman ter-restart</p>'
+    + '<p style="font-size:13px;line-height:1.5;color:#4B5563;margin-bottom:8px;">HP kehabisan memori saat kamera dibuka, jadi Chrome menutup form ini. <b>Progress audit kamu aman</b> (outlet ' + outlet + ').</p>'
+    + '<p style="font-size:13px;line-height:1.5;color:#4B5563;margin-bottom:14px;">Foto/video yang barusan diambil <b>belum masuk</b>. Ambil ulang, atau kalau sudah ada di galeri HP, pilih lewat tombol Galeri.</p>');
+  window._restoreBanner = m.overlay;
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:8px;';
+  wrap.appendChild(_modalBtn('Mulai Baru', false, function() { clearPendingCapture(); discardProgress(); }));
+  wrap.appendChild(_modalBtn('Lanjutkan', true, function() {
+    clearPendingCapture();
+    restoreProgress();
+    setTimeout(function() { scrollToCaptureTarget(p.target); }, 300);
+  }));
+  m.box.appendChild(wrap);
+}
+checkCaptureRecovery();
 </script>
 </body>
 </html>
