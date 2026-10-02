@@ -399,7 +399,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
       <p style="font-size:13px;font-weight:600;color:var(--gray-900);margin-bottom:4px;">📸 Foto Bersama Auditor &amp; Auditee</p>
       <p style="font-size:11px;color:var(--gray-600);margin-bottom:8px;">Bukti kehadiran audit</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <input type="file" accept="image/*,video/*" capture="environment" class="foto-input" id="foto-cam-bersama" onchange="handleExtraPhoto(event,'bersama')">
+        <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto-cam-bersama" onchange="handleExtraPhoto(event,'bersama')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-bersama" onchange="handleExtraPhoto(event,'bersama')">
         <label class="foto-btn" id="foto-btn-bersama" style="font-size:12px;padding:8px 10px;" for="foto-cam-bersama">📷 Kamera</label>
         <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-bersama">🖼 Galeri</label>
@@ -413,7 +413,7 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
       <p style="font-size:13px;font-weight:600;color:var(--gray-900);margin-bottom:4px;">📖 Foto Communication Book</p>
       <p style="font-size:11px;color:var(--gray-600);margin-bottom:8px;">Hasil pengisian communication book di outlet</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <input type="file" accept="image/*,video/*" capture="environment" class="foto-input" id="foto-cam-commbook" onchange="handleExtraPhoto(event,'commbook')">
+        <input type="file" accept="image/*" capture="environment" class="foto-input" id="foto-cam-commbook" onchange="handleExtraPhoto(event,'commbook')">
         <input type="file" accept="image/*,video/*" class="foto-input" id="foto-input-commbook" onchange="handleExtraPhoto(event,'commbook')">
         <label class="foto-btn" id="foto-btn-commbook" style="font-size:12px;padding:8px 10px;" for="foto-cam-commbook">📷 Kamera</label>
         <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-commbook">🖼 Galeri</label>
@@ -962,7 +962,7 @@ async function handleExtraPhoto(event, key) {
     var result = await postJSON(APPS_SCRIPT_URL, {
       action: 'upload_photo', base64Data: dataUrl,
       fileName: fileName, nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
-    }, isVideo ? 180000 : 60000);
+    }, isVideo ? 300000 : 60000, isVideo ? 1 : 2);
 
     if (result.success) {
       extraPhotos[key] = result.url;
@@ -1193,7 +1193,7 @@ function restoreItemVisuals() {
       var total  = resp.fotoUrls.length;
       if (status) status.textContent = total + '/3 file di Drive' + (total < 3 ? ' (bisa tambah lagi)' : '');
       var uploadLabels = document.querySelectorAll(
-        'label[for="foto-cam-' + item.code + '"], label[for="foto-input-' + item.code + '"]');
+        'label[for="foto-cam-' + item.code + '"], label[for="foto-vid-' + item.code + '"], label[for="foto-input-' + item.code + '"]');
       uploadLabels.forEach(function(l){ l.classList.add('uploaded'); l.style.borderStyle = 'solid'; });
     }
   });
@@ -1306,11 +1306,17 @@ function buildItemHTML(item) {
     <textarea class="catatan-field hidden" id="cat-${item.code}" placeholder="📝 Catatan temuan..." rows="2"
       oninput="auditItems['${item.code}'].catatan=this.value"></textarea>
     <div class="foto-area" style="flex-wrap:wrap;gap:6px;">
-      <input type="file" accept="image/*,video/*" capture="environment" multiple class="foto-input"
+      <!-- KAMERA: foto langsung (image saja + TANPA multiple, supaya capture jalan) -->
+      <input type="file" accept="image/*" capture="environment" class="foto-input"
         id="foto-cam-${item.code}" onchange="handleFotoSelect(event,'${item.code}')">
+      <!-- VIDEO: rekam langsung -->
+      <input type="file" accept="video/*" capture="environment" class="foto-input"
+        id="foto-vid-${item.code}" onchange="handleFotoSelect(event,'${item.code}')">
+      <!-- GALERI: pilih dari galeri, boleh banyak -->
       <input type="file" accept="image/*,video/*" multiple class="foto-input"
         id="foto-input-${item.code}" onchange="handleFotoSelect(event,'${item.code}')">
       <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-cam-${item.code}">📷 Kamera</label>
+      <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-vid-${item.code}">🎥 Video</label>
       <label class="foto-btn" style="font-size:12px;padding:8px 10px;" for="foto-input-${item.code}">🖼 Galeri</label>
       <span class="upload-status" id="foto-status-${item.code}"></span>
       <div id="foto-thumbs-${item.code}" style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:6px;"></div>
@@ -1376,7 +1382,7 @@ function removeFoto(code, idx) {
   var total  = auditItems[code].fotoUrls.length;
   var status = document.getElementById('foto-status-' + code);
   var uploadLabels = document.querySelectorAll(
-    'label[for="foto-cam-' + code + '"], label[for="foto-input-' + code + '"]');
+    'label[for="foto-cam-' + code + '"], label[for="foto-vid-' + code + '"], label[for="foto-input-' + code + '"]');
   if (total === 0) {
     uploadLabels.forEach(function(l){ l.classList.remove('uploaded'); l.style.borderStyle = ''; });
   }
@@ -1398,14 +1404,14 @@ async function handleFotoSelect(event, code) {
     return;
   }
 
-  var MAX_MB_IMG = 50, MAX_MB_VIDEO = 20;
+  var MAX_MB_IMG = 50, MAX_MB_VIDEO = 35;
   var tooBig = files.filter(function(f){
     var limit = f.type.startsWith('video/') ? MAX_MB_VIDEO : MAX_MB_IMG;
     return f.size > limit * 1024 * 1024;
   });
   if (tooBig.length > 0) {
     showError(tooBig.length + ' file kelewat besar (video maks ' + MAX_MB_VIDEO + 'MB, foto maks '
-      + MAX_MB_IMG + 'MB). Trim/kompres videonya dulu ya sebelum upload.');
+      + MAX_MB_IMG + 'MB). Rekam di resolusi 720p atau trim videonya dulu ya.');
     files = files.filter(function(f){
       var limit = f.type.startsWith('video/') ? MAX_MB_VIDEO : MAX_MB_IMG;
       return f.size <= limit * 1024 * 1024;
@@ -1419,7 +1425,7 @@ async function handleFotoSelect(event, code) {
   var tanggal   = auditInfo.tanggalAudit || new Date().toISOString().split('T')[0];
 
   var uploadLabels = document.querySelectorAll(
-    'label[for="foto-cam-' + code + '"], label[for="foto-input-' + code + '"]');
+    'label[for="foto-cam-' + code + '"], label[for="foto-vid-' + code + '"], label[for="foto-input-' + code + '"]');
   uploadLabels.forEach(function(l){
     l._origText = l.textContent;
     l.style.opacity = '0.5';
@@ -1460,7 +1466,7 @@ async function handleFotoSelect(event, code) {
       var result = await postJSON(APPS_SCRIPT_URL, {
         action: 'upload_photo', base64Data: dataUrl, fileName: fileName,
         nomorOutlet: auditInfo.nomorOutlet || 'doc', tanggal: tanggal
-      }, isVideo ? 180000 : 60000);
+      }, isVideo ? 300000 : 60000, isVideo ? 1 : 2);
 
       if (result.success) {
         auditItems[code].fotoUrls.push(result.url);
