@@ -1121,9 +1121,10 @@ function showError(msg) {
 }
 
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById(id);
-  if (el) { el.classList.add('active'); el.scrollTop = 0; window.scrollTo(0,0); }
+  if (!el) { console.warn('showScreen: layar tidak ditemukan -> ' + id); return; }   // jangan sampai layar jadi kosong
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  el.classList.add('active'); el.scrollTop = 0; window.scrollTo(0,0);
 }
 
 // ── SPLASH → INFO ────────────────────────────────────────────
@@ -1680,6 +1681,10 @@ function compressImage(file) {
 
 // ── SECTION NAV ───────────────────────────────────────────────
 function goToSection(idx) {
+  // idx >= jumlah section = halaman Tanda Tangan (langkah setelah section terakhir).
+  // Dulu tombol "Kembali Edit" di Review memanggil goToSection(9) -> screen-sec-undefined -> layar kosong.
+  if (idx >= SECTION_KEYS.length) { showSignatureScreen(); return; }
+  if (idx < 0) idx = 0;
   currentSectionIdx = idx;
   saveProgress();
   showScreen('screen-sec-' + SECTION_KEYS[idx]);
