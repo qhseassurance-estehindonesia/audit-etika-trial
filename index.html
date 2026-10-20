@@ -282,7 +282,8 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
       </div>
       <div class="field">
         <label>Alamat Kebun <span style="color:var(--red-600)">*</span></label>
-        <input type="text" id="f-alamat" placeholder="Alamat lengkap outlet" autocomplete="off">
+        <input type="text" id="f-alamat" placeholder="Alamat lengkap + provinsi, mis. Jl. Pajajaran No. 1, Bogor, Jawa Barat" autocomplete="off" oninput="updateProvinsiHint()">
+        <div id="f-alamat-hint" style="font-size:12px;line-height:1.4;min-height:16px;"></div>
       </div>
       <div class="field">
         <label>Nama Auditor <span style="color:var(--red-600)">*</span></label>
@@ -1190,6 +1191,108 @@ function discardProgress() {
   _startFresh();
 }
 
+// ── DAFTAR 38 PROVINSI + ALIAS ─────────────────────────────────────
+// Format: [nama resmi, [alias...]]. Alias ditulis huruf kecil tanpa tanda baca
+// ("." dan "," dianggap spasi). Pencocokan memakai KATA UTUH, jadi "bali" tidak
+// cocok dengan "Balikpapan". Mau tambah singkatan? Tambahkan di daftar alias.
+var PROVINSI_DATA_ = [
+  ['Aceh', ['aceh', 'nanggroe aceh darussalam', 'nad']],
+  ['Sumatera Utara', ['sumatera utara', 'sumatra utara', 'sumut']],
+  ['Sumatera Barat', ['sumatera barat', 'sumatra barat', 'sumbar']],
+  ['Riau', ['riau']],
+  ['Kepulauan Riau', ['kepulauan riau', 'kepri']],
+  ['Jambi', ['jambi']],
+  ['Sumatera Selatan', ['sumatera selatan', 'sumatra selatan', 'sumsel']],
+  ['Kepulauan Bangka Belitung', ['kepulauan bangka belitung', 'bangka belitung', 'babel']],
+  ['Bengkulu', ['bengkulu']],
+  ['Lampung', ['lampung']],
+  ['DKI Jakarta', ['dki jakarta', 'dki', 'daerah khusus ibukota jakarta', 'daerah khusus ibu kota jakarta', 'jakarta']],
+  ['Banten', ['banten']],
+  ['Jawa Barat', ['jawa barat', 'jabar']],
+  ['Jawa Tengah', ['jawa tengah', 'jateng']],
+  ['DI Yogyakarta', ['di yogyakarta', 'd i yogyakarta', 'daerah istimewa yogyakarta', 'diy', 'yogyakarta']],
+  ['Jawa Timur', ['jawa timur', 'jatim']],
+  ['Bali', ['bali']],
+  ['Nusa Tenggara Barat', ['nusa tenggara barat', 'ntb']],
+  ['Nusa Tenggara Timur', ['nusa tenggara timur', 'ntt']],
+  ['Kalimantan Barat', ['kalimantan barat', 'kalbar']],
+  ['Kalimantan Tengah', ['kalimantan tengah', 'kalteng']],
+  ['Kalimantan Selatan', ['kalimantan selatan', 'kalsel']],
+  ['Kalimantan Timur', ['kalimantan timur', 'kaltim']],
+  ['Kalimantan Utara', ['kalimantan utara', 'kaltara']],
+  ['Sulawesi Utara', ['sulawesi utara', 'sulut']],
+  ['Gorontalo', ['gorontalo']],
+  ['Sulawesi Tengah', ['sulawesi tengah', 'sulteng']],
+  ['Sulawesi Barat', ['sulawesi barat', 'sulbar']],
+  ['Sulawesi Selatan', ['sulawesi selatan', 'sulsel']],
+  ['Sulawesi Tenggara', ['sulawesi tenggara', 'sultra']],
+  ['Maluku', ['maluku']],
+  ['Maluku Utara', ['maluku utara', 'malut']],
+  ['Papua', ['papua']],
+  ['Papua Barat', ['papua barat']],
+  ['Papua Barat Daya', ['papua barat daya']],
+  ['Papua Selatan', ['papua selatan']],
+  ['Papua Tengah', ['papua tengah']],
+  ['Papua Pegunungan', ['papua pegunungan']]
+];
+
+// Nama provinsi yang muncul tepat setelah kata-kata ini dianggap NAMA JALAN, bukan provinsi
+// (mis. "Jl. Banten No. 5, Bandung" bukan di Provinsi Banten).
+var PROVINSI_KATA_JALAN_ = { jl: 1, jalan: 1, gg: 1, gang: 1, lorong: 1, lr: 1 };
+
+function normalisasiAlamatProvinsi_(s) {
+  return ' ' + String(s === null || s === undefined ? '' : s)
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/ +/g, ' ').trim() + ' ';
+}
+
+// Posisi AKHIR kemunculan alias (kata utuh) yang paling belakang dan bukan nama jalan; -1 kalau tidak ada.
+function posisiAkhirAliasProvinsi_(s, alias) {
+  var pat = ' ' + alias + ' ';
+  var dari = s.length;
+  while (dari >= 0) {
+    var idx = s.lastIndexOf(pat, dari);
+    if (idx < 0) return -1;
+    var sebelum = s.substring(0, idx).replace(/ +$/, '').split(' ').pop();
+    if (!PROVINSI_KATA_JALAN_[sebelum]) return idx + pat.length;
+    dari = idx - 1;
+  }
+  return -1;
+}
+
+/**
+ * Mengembalikan nama provinsi (nama resmi) dari teks alamat, atau '' kalau tidak ada.
+ * Aturan: alias yang kemunculannya paling BELAKANG di alamat yang menang (provinsi biasanya
+ * ditulis di akhir); kalau berakhir di posisi yang sama, alias yang lebih panjang menang
+ * (jadi "Kepulauan Riau" tidak terbaca "Riau").
+ */
+function deteksiProvinsi(alamat) {
+  var s = normalisasiAlamatProvinsi_(alamat);
+  if (s.trim() === '') return '';
+  var terbaik = '', akhirTerbaik = -1, panjangTerbaik = 0;
+  for (var i = 0; i < PROVINSI_DATA_.length; i++) {
+    var nama = PROVINSI_DATA_[i][0], alias = PROVINSI_DATA_[i][1];
+    for (var j = 0; j < alias.length; j++) {
+      var akhir = posisiAkhirAliasProvinsi_(s, alias[j]);
+      if (akhir < 0) continue;
+      if (akhir > akhirTerbaik || (akhir === akhirTerbaik && alias[j].length > panjangTerbaik)) {
+        terbaik = nama; akhirTerbaik = akhir; panjangTerbaik = alias[j].length;
+      }
+    }
+  }
+  return terbaik;
+}
+
+// Petunjuk langsung di bawah kolom alamat: provinsi terdeteksi atau belum
+function updateProvinsiHint() {
+  var el = document.getElementById('f-alamat'), box = document.getElementById('f-alamat-hint');
+  if (!el || !box) return;
+  var v = el.value.trim();
+  if (!v) { box.textContent = ''; return; }
+  var p = deteksiProvinsi(v);
+  if (p) { box.style.color = '#2D6A4F'; box.textContent = '\u2705 Provinsi terdeteksi: ' + p; }
+  else   { box.style.color = '#B45309'; box.textContent = '\u26A0\uFE0F Alamat belum mencantumkan provinsi. Tambahkan di akhir alamat, mis. "..., Bogor, Jawa Barat".'; }
+}
+
 // ── INFO SUBMIT ───────────────────────────────────────────────
 function submitInfo() {
   const outlet      = document.getElementById('f-outlet').value.trim();
@@ -1205,6 +1308,7 @@ function submitInfo() {
   if (!outlet)      { showError('Nomor Outlet wajib diisi!');    document.getElementById('f-outlet').focus();      return; }
   if (!namaOutlet)  { showError('Nama Outlet wajib diisi!');     document.getElementById('f-nama-outlet').focus(); return; }
   if (!alamat)      { showError('Alamat Kebun wajib diisi!');     document.getElementById('f-alamat').focus();      return; }
+  if (!deteksiProvinsi(alamat)) { showError('Alamat Kebun harus mencantumkan PROVINSI, mis. "..., Bogor, Jawa Barat".'); updateProvinsiHint(); document.getElementById('f-alamat').focus(); return; }
   if (!auditor)     { showError('Nama Auditor wajib diisi!');     document.getElementById('f-auditor').focus();     return; }
   if (!tanggal)     { showError('Tanggal Audit wajib diisi!');    document.getElementById('f-tanggal').focus();     return; }
   if (!posisi)      { showError('Posisi Auditor wajib diisi!');   document.getElementById('f-posisi').focus();      return; }
@@ -1273,6 +1377,7 @@ function fillInfoFields() {
   var stEl  = document.getElementById('f-status');
   if (katEl && auditInfo.kategoriAudit) katEl.value = auditInfo.kategoriAudit;
   if (stEl  && auditInfo.statusKebun)   stEl.value  = auditInfo.statusKebun;
+  updateProvinsiHint();
 }
 
 // ── BUILD SECTION SCREENS ─────────────────────────────────────
@@ -1795,6 +1900,10 @@ function formatScoreClient(n) {
 
 // ── REVIEW ────────────────────────────────────────────────────
 function showReview() {
+  // Tombol kirim di-disable saat submit & tidak pernah dinyalakan lagi setelah SUKSES
+  // (bug: Revisi / Audit Baru -> sampai Review -> tombol abu-abu). Nyalakan tiap Review dibuka.
+  const btnSubmit = document.getElementById('btn-final-submit');
+  if (btnSubmit) btnSubmit.disabled = false;
   const reviewContent = document.getElementById('review-content');
   const liveScores = calculateLiveScores();
   const gradeColors = { A:'#1B4332', B:'#2D6A4F', C:'#D97706', D:'#DC2626', F:'#7F1D1D' };
@@ -1879,6 +1988,13 @@ function showReview() {
 
 // ── FINAL SUBMIT ──────────────────────────────────────────────
 async function finalSubmit() {
+  if (!deteksiProvinsi(auditInfo.alamatKebun || '')) {
+    showError('Alamat Kebun belum mencantumkan provinsi. Lengkapi dulu di halaman Informasi Audit.');
+    showScreen('screen-info');
+    var fa = document.getElementById('f-alamat');
+    if (fa) { if (auditInfo.alamatKebun) fa.value = auditInfo.alamatKebun; fa.focus(); updateProvinsiHint(); }
+    return;
+  }
   document.getElementById('btn-final-submit').disabled = true;
   showScreen('screen-submit');
   updateSubmitProgress('Memproses data audit...');
