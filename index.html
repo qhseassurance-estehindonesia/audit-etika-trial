@@ -317,6 +317,14 @@ html, body { height: 100%; background: var(--bg); font-family: 'Plus Jakarta San
         </select>
       </div>
       <div class="field">
+        <label>Kategori Kebun <span style="color:var(--red-600)">*</span></label>
+        <select id="f-kategori-kebun">
+          <option value="">-- Pilih --</option>
+          <option>Operate by Management</option>
+          <option>Operate by Mitra</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Email PIC Outlet <span style="color:var(--red-600)">*</span></label>
         <input type="email" id="f-email" placeholder="picoutlet@email.com" autocomplete="email">
       </div>
@@ -1303,6 +1311,7 @@ function submitInfo() {
   const posisi   = document.getElementById('f-posisi').value.trim();
   const kategori = document.getElementById('f-kategori').value;
   const status   = document.getElementById('f-status').value;
+  const kategoriKebun = document.getElementById('f-kategori-kebun').value;
   const email    = document.getElementById('f-email').value.trim();
 
   if (!outlet)      { showError('Nomor Outlet wajib diisi!');    document.getElementById('f-outlet').focus();      return; }
@@ -1314,11 +1323,12 @@ function submitInfo() {
   if (!posisi)      { showError('Posisi Auditor wajib diisi!');   document.getElementById('f-posisi').focus();      return; }
   if (!kategori)    { showError('Kategori Audit wajib dipilih!'); document.getElementById('f-kategori').focus();   return; }
   if (!status)      { showError('Status Kebun wajib dipilih!');   document.getElementById('f-status').focus();      return; }
+  if (!kategoriKebun) { showError('Kategori Kebun wajib dipilih!'); document.getElementById('f-kategori-kebun').focus(); return; }
   if (!email || !email.includes('@')) { alert('Format email tidak valid!'); return; }
 
   Object.assign(auditInfo, { nomorOutlet:outlet, namaOutlet:namaOutlet, alamatKebun:alamat,
                 namaAuditor:auditor, tanggalAudit:tanggal,
-                posisiAuditor:posisi, kategoriAudit:kategori, statusKebun:status, emailPIC:email });
+                posisiAuditor:posisi, kategoriAudit:kategori, statusKebun:status, kategoriKebun:kategoriKebun, emailPIC:email });
   saveProgress();
 
   buildSectionScreens();
@@ -1377,6 +1387,8 @@ function fillInfoFields() {
   var stEl  = document.getElementById('f-status');
   if (katEl && auditInfo.kategoriAudit) katEl.value = auditInfo.kategoriAudit;
   if (stEl  && auditInfo.statusKebun)   stEl.value  = auditInfo.statusKebun;
+  var kkEl = document.getElementById('f-kategori-kebun');
+  if (kkEl && auditInfo.kategoriKebun) kkEl.value = auditInfo.kategoriKebun;
   updateProvinsiHint();
 }
 
@@ -1944,7 +1956,7 @@ function showReview() {
     </div>
 
     <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:var(--shadow);">
-      ${['nomorOutlet','namaAuditor','tanggalAudit','posisiAuditor','kategoriAudit','statusKebun','emailPIC'].map(k => `
+      ${['nomorOutlet','namaAuditor','tanggalAudit','posisiAuditor','kategoriAudit','statusKebun','kategoriKebun','emailPIC'].map(k => `
         <div class="summary-item">
           <span class="summary-label">${k.replace(/([A-Z])/g,' $1').replace(/^./, s=>s.toUpperCase())}</span>
           <span class="summary-value">${auditInfo[k]||'-'}</span>
@@ -1993,6 +2005,13 @@ async function finalSubmit() {
     showScreen('screen-info');
     var fa = document.getElementById('f-alamat');
     if (fa) { if (auditInfo.alamatKebun) fa.value = auditInfo.alamatKebun; fa.focus(); updateProvinsiHint(); }
+    return;
+  }
+  if (!auditInfo.kategoriKebun) {
+    showError('Kategori Kebun belum dipilih. Lengkapi dulu di halaman Informasi Audit.');
+    showScreen('screen-info');
+    var fk = document.getElementById('f-kategori-kebun');
+    if (fk) fk.focus();
     return;
   }
   document.getElementById('btn-final-submit').disabled = true;
@@ -2087,7 +2106,7 @@ function resetForm() {
   ITEMS.forEach(i => { auditItems[i.code] = { comply:true, catatan:'', fotoUrl:'' }; });
   document.getElementById('screen-sections').innerHTML = '';
 
-  ['f-outlet','f-nama-outlet','f-alamat','f-auditor','f-tanggal','f-posisi','f-status','f-kategori','f-email']
+  ['f-outlet','f-nama-outlet','f-alamat','f-auditor','f-tanggal','f-posisi','f-status','f-kategori-kebun','f-kategori','f-email']
     .forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.value = '';
